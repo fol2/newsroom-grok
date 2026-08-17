@@ -53,6 +53,10 @@ from newsroom.internal_beta_publish import (
     publish_command_definition,
     publish_payload_contract,
 )
+from newsroom.publication_bundle import (
+    bundle_command_definition,
+    bundle_payload_contract,
+)
 from newsroom.target_operation import (
     operation_command_definition,
     operation_payload_contract,
@@ -116,6 +120,7 @@ def open_host_store(path: Path) -> object:
     decision_contract = decision_payload_contract()
     operation_contract = operation_payload_contract()
     publish_contract = publish_payload_contract()
+    bundle_contract = bundle_payload_contract()
     return open_authority_event_system(
         path=path,
         registry=CommandRegistry(
@@ -130,6 +135,7 @@ def open_host_store(path: Path) -> object:
                 decision_command_definition(decision_contract),
                 operation_command_definition(operation_contract),
                 publish_command_definition(publish_contract),
+                bundle_command_definition(bundle_contract),
             ]
         ),
         payload_schemas=PayloadSchemaRegistry(
@@ -144,6 +150,7 @@ def open_host_store(path: Path) -> object:
                 decision_contract,
                 operation_contract,
                 publish_contract,
+                bundle_contract,
             )
         ),
         authenticator=StaticAuthenticator(
@@ -185,6 +192,7 @@ def open_host_store(path: Path) -> object:
                 CONTROLLER_ID: frozenset(
                     {
                         "authority.publication.decide",
+                        "authority.publication.bundle",
                         "authority.host.read",
                     }
                 ),
