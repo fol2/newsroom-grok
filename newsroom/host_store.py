@@ -1,4 +1,4 @@
-"""Shared host authority store: first-boot hold, envelope grant, first ingest."""
+"""Shared host authority store: hold, envelope grant, first ingest, mint decision."""
 
 from __future__ import annotations
 
@@ -24,10 +24,16 @@ from newsroom.discovery_ingest import (
     signal_payload_contract,
 )
 from newsroom.envelope_grant import (
+    CONTROLLER_ID,
     OWNER_CREDENTIAL,
     OWNER_PRINCIPAL,
     envelope_command_definition,
     envelope_payload_contract,
+)
+from newsroom.publication_decision import (
+    CONTROLLER_CREDENTIAL,
+    decision_command_definition,
+    decision_payload_contract,
 )
 
 
@@ -81,6 +87,7 @@ def open_host_store(path: Path) -> object:
     hold_contract = hold_payload_contract()
     envelope_contract = envelope_payload_contract()
     signal_contract = signal_payload_contract()
+    decision_contract = decision_payload_contract()
     return open_authority_event_system(
         path=path,
         registry=CommandRegistry(
@@ -88,10 +95,11 @@ def open_host_store(path: Path) -> object:
                 hold_command_definition(hold_contract),
                 envelope_command_definition(envelope_contract),
                 signal_command_definition(signal_contract),
+                decision_command_definition(decision_contract),
             ]
         ),
         payload_schemas=PayloadSchemaRegistry(
-            (hold_contract, envelope_contract, signal_contract)
+            (hold_contract, envelope_contract, signal_contract, decision_contract)
         ),
         authenticator=StaticAuthenticator(
             credentials={
@@ -102,6 +110,10 @@ def open_host_store(path: Path) -> object:
                 OWNER_CREDENTIAL: StaticPrincipal(
                     OWNER_PRINCIPAL,
                     assurance_class="OWNER_SIGNED",
+                ),
+                CONTROLLER_CREDENTIAL: StaticPrincipal(
+                    CONTROLLER_ID,
+                    assurance_class="AGENT_TURN_CONTROLLER",
                 ),
             },
             authority_domain="newsroom.host",
@@ -119,15 +131,28 @@ def open_host_store(path: Path) -> object:
                         "authority.host.read",
                     }
                 ),
+                CONTROLLER_ID: frozenset(
+                    {
+                        "authority.publication.decide",
+                        "authority.host.read",
+                    }
+                ),
             },
         ),
         event_read_policy=EventReadPolicy(
             policy_id="host-store-read-v1",
             purpose="host.store.audit",
             required_scope="authority.host.read",
-            allowed_principal_ids=frozenset({"host.newsroom", OWNER_PRINCIPAL}),
+            allowed_principal_ids=frozenset(
+                {"host.newsroom", OWNER_PRINCIPAL, CONTROLLER_ID}
+            ),
             allowed_security_scopes=frozenset(
-                {"authority.host", "authority.envelope", "authority.discovery"}
+                {
+                    "authority.host",
+                    "authority.envelope",
+                    "authority.discovery",
+                    "authority.publication",
+                }
             ),
             allowed_trust_scopes=frozenset(
                 {TrustScope.OBSERVED, TrustScope.ADMITTED}
