@@ -244,3 +244,279 @@ def test_emergency_stop_still_holds_after_ingest(tmp_path: Path) -> None:
         assert len(_read_signals(ledger_path(home))) == 1
     finally:
         _stop(home, pause_restore=True)
+
+
+REMAINING_RSS_SOURCE_IDS = ("HK-04", "RAD-01", "RAD-02", "UK-01", "UK-05", "UK-10")
+LOCKED_REMAINING_URLS = {
+    "UK-01": (
+        "https://www.gov.uk/search/all.atom"
+        "?organisations%5B%5D=home-office"
+        "&organisations%5B%5D=uk-visas-and-immigration"
+        "&order=updated-newest"
+    ),
+    "UK-05": (
+        "https://www.gov.uk/search/all.atom"
+        "?organisations%5B%5D=department-for-education"
+        "&organisations%5B%5D=ofqual"
+        "&order=updated-newest"
+    ),
+    "UK-10": "https://www.metoffice.gov.uk/public/data/PWSCache/WarningsRSS/Region/UK",
+    "HK-04": "https://www.edb.gov.hk/tc/whats_new_rss.xml",
+    "RAD-01": "https://rthk9.rthk.hk/rthk/news/rss/c_expressnews_clocal.xml",
+    "RAD-02": "https://feeds.bbci.co.uk/news/uk/rss.xml",
+}
+PARKED_JSON_SOURCE_IDS = ("HK-02", "UK-02", "UK-03")
+
+
+def test_remaining_rss_urls_match_james_first_boot_lock() -> None:
+    from newsroom.discovery_ingest import RSS_SOURCE_IDS
+
+    assert REMAINING_RSS_SOURCE_IDS == (
+        "HK-04",
+        "RAD-01",
+        "RAD-02",
+        "UK-01",
+        "UK-05",
+        "UK-10",
+    )
+    assert set(LOCKED_REMAINING_URLS) == set(REMAINING_RSS_SOURCE_IDS)
+    for source_id, url in LOCKED_REMAINING_URLS.items():
+        assert SOURCE_URLS[source_id] == url
+        assert_allowed_url(url)
+        assert source_id in RSS_SOURCE_IDS
+    for parked in PARKED_JSON_SOURCE_IDS:
+        assert parked not in RSS_SOURCE_IDS
+        assert parked not in REMAINING_RSS_SOURCE_IDS
+
+
+def test_each_rss_source_has_a_unique_aggregate_and_idempotency_key() -> None:
+    from newsroom.discovery_ingest import (
+        DEFAULT_SOURCE_ID,
+        IDEMPOTENCY_KEY,
+        SIGNAL_AGGREGATE_ID,
+        SIGNAL_AGGREGATE_IDS,
+        signal_idempotency_key,
+    )
+
+    assert SIGNAL_AGGREGATE_IDS[DEFAULT_SOURCE_ID] == SIGNAL_AGGREGATE_ID
+    assert signal_idempotency_key(DEFAULT_SOURCE_ID) == IDEMPOTENCY_KEY
+    source_ids = (DEFAULT_SOURCE_ID, *REMAINING_RSS_SOURCE_IDS)
+    aggregate_ids = [str(SIGNAL_AGGREGATE_IDS[source_id]) for source_id in source_ids]
+    keys = [signal_idempotency_key(source_id) for source_id in source_ids]
+    assert len(set(aggregate_ids)) == len(source_ids)
+    assert len(set(keys)) == len(source_ids)
+    for source_id in REMAINING_RSS_SOURCE_IDS:
+        assert SIGNAL_AGGREGATE_IDS[source_id] != SIGNAL_AGGREGATE_ID
+        assert signal_idempotency_key(source_id) != IDEMPOTENCY_KEY
+
+
+def test_ingest_signal_cannot_admit_a_second_rss_source_until_source_id(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "newsroom"
+    _install_uv_stub(tmp_path)
+    try:
+        start = _cli("start", home=home)
+        assert start.returncode == 0, start.stderr
+        granted = _cli("grant-envelope", home=home)
+        assert granted.returncode == 0, granted.stderr
+
+        first = _cli("ingest-signal", home=home, env=_rss_env(tmp_path))
+        assert first.returncode == 0, first.stderr
+        first_report = json.loads(first.stdout)
+        assert first_report["source_id"] == "HK-01"
+        assert first_report["url"] == SOURCE_URLS["HK-01"]
+        assert len(_read_signals(ledger_path(home))) == 1
+
+        second = _cli(
+            "ingest-signal",
+            "--source-id",
+            "HK-04",
+            home=home,
+            env=_rss_env(tmp_path),
+        )
+        assert second.returncode == 0, second.stderr
+        second_report = json.loads(second.stdout)
+        assert second_report["ok"] is True
+        assert second_report["source_id"] == "HK-04"
+        assert second_report["url"] == SOURCE_URLS["HK-04"]
+        assert second_report["event_type"] == EVENT_TYPE
+        assert second_report["auto_publish"] is False
+        assert second_report["discord"] is False
+        assert second_report["public_adapter"] is False
+
+        signals = _read_signals(ledger_path(home))
+        source_ids = {payload["source_id"] for _event, _principal, payload in signals}
+        assert source_ids == {"HK-01", "HK-04"}
+        assert len(signals) == 2
+        for _event, principal_id, payload in signals:
+            assert principal_id == OWNER_PRINCIPAL
+            assert payload["adapter"] == "official_source_definition_rss"
+            assert payload["auto_publish"] is False
+            assert payload["discord"] is False
+            assert payload["public_adapter"] is False
+            assert payload["url"] == SOURCE_URLS[str(payload["source_id"])]
+            assert_allowed_url(str(payload["url"]))
+            raw = json.dumps(payload).lower()
+            assert all(marker not in raw for marker in RETIRED_MARKERS)
+    finally:
+        _stop(home)
+
+
+def test_ingest_signal_records_one_admitted_row_per_remaining_rss_source(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "newsroom"
+    _install_uv_stub(tmp_path)
+    try:
+        start = _cli("start", home=home)
+        assert start.returncode == 0, start.stderr
+        granted = _cli("grant-envelope", home=home)
+        assert granted.returncode == 0, granted.stderr
+
+        first = _cli("ingest-signal", home=home, env=_rss_env(tmp_path))
+        assert first.returncode == 0, first.stderr
+        assert json.loads(first.stdout)["source_id"] == "HK-01"
+
+        for source_id in REMAINING_RSS_SOURCE_IDS:
+            ingested = _cli(
+                "ingest-signal",
+                "--source-id",
+                source_id,
+                home=home,
+                env=_rss_env(tmp_path),
+            )
+            assert ingested.returncode == 0, ingested.stderr
+            report = json.loads(ingested.stdout)
+            assert report["ok"] is True
+            assert report["source_id"] == source_id
+            assert report["url"] == SOURCE_URLS[source_id]
+            assert report["event_type"] == EVENT_TYPE
+            assert report["auto_publish"] is False
+            assert report["discord"] is False
+            assert report["public_adapter"] is False
+
+            again = _cli(
+                "ingest-signal",
+                "--source-id",
+                source_id,
+                home=home,
+                env=_rss_env(tmp_path),
+            )
+            assert again.returncode == 0, again.stderr
+
+        signals = _read_signals(ledger_path(home))
+        source_ids = {payload["source_id"] for _event, _principal, payload in signals}
+        assert source_ids == {"HK-01", *REMAINING_RSS_SOURCE_IDS}
+        assert len(signals) == 7
+        for _event, principal_id, payload in signals:
+            assert principal_id == OWNER_PRINCIPAL
+            assert payload["adapter"] == "official_source_definition_rss"
+            assert payload["auto_publish"] is False
+            assert payload["discord"] is False
+            assert payload["public_adapter"] is False
+            assert payload["url"] == SOURCE_URLS[str(payload["source_id"])]
+            assert_allowed_url(str(payload["url"]))
+    finally:
+        _stop(home)
+
+
+def test_ingest_signal_refuses_parked_json_and_unknown_source(tmp_path: Path) -> None:
+    home = tmp_path / "newsroom"
+    _install_uv_stub(tmp_path)
+    try:
+        start = _cli("start", home=home)
+        assert start.returncode == 0, start.stderr
+        granted = _cli("grant-envelope", home=home)
+        assert granted.returncode == 0, granted.stderr
+
+        for source_id in (*PARKED_JSON_SOURCE_IDS, "EXAMPLE-01"):
+            refused = _cli(
+                "ingest-signal",
+                "--source-id",
+                source_id,
+                home=home,
+                env=_rss_env(tmp_path),
+            )
+            assert refused.returncode != 0
+            report = json.loads(refused.stdout)
+            assert report["ok"] is False
+            assert "invent" not in json.dumps(report).lower()
+
+        assert _read_signals(ledger_path(home)) == []
+    finally:
+        _stop(home)
+
+
+def test_ingest_signal_refuses_while_emergency_stop_is_paused(tmp_path: Path) -> None:
+    home = tmp_path / "newsroom"
+    pause = home / "logs" / PAUSE_RESTORE_NAME
+    _install_uv_stub(tmp_path)
+    try:
+        start = _cli("start", home=home)
+        assert start.returncode == 0, start.stderr
+        granted = _cli("grant-envelope", home=home)
+        assert granted.returncode == 0, granted.stderr
+        db = ledger_path(home)
+        assert _read_signals(db) == []
+
+        stopped = _cli("stop", "--pause-restore", home=home)
+        assert stopped.returncode == 0, stopped.stderr
+        assert pause.is_file()
+
+        refused = _cli(
+            "ingest-signal",
+            "--source-id",
+            "HK-04",
+            home=home,
+            env=_rss_env(tmp_path),
+        )
+        assert refused.returncode != 0
+        report = json.loads(refused.stdout)
+        assert report["ok"] is False
+        error = report["error"].lower()
+        assert "pause" in error or "emergency stop" in error
+        assert "resume" in error
+        assert _read_signals(db) == []
+        assert pause.is_file()
+
+        auto = _cli("start", home=home)
+        assert auto.returncode != 0
+        health = json.loads(_cli("health", home=home).stdout)
+        assert health["process_up"] is False
+        assert health["pid"] is None
+        assert pause.is_file()
+
+        still = _cli(
+            "ingest-signal",
+            "--source-id",
+            "HK-04",
+            home=home,
+            env=_rss_env(tmp_path),
+        )
+        assert still.returncode != 0
+        still_report = json.loads(still.stdout)
+        assert still_report["ok"] is False
+        assert _read_signals(db) == []
+
+        resumed = _cli("start", "--resume", home=home)
+        assert resumed.returncode == 0, resumed.stderr
+        assert not pause.is_file()
+
+        ingested = _cli(
+            "ingest-signal",
+            "--source-id",
+            "HK-04",
+            home=home,
+            env=_rss_env(tmp_path),
+        )
+        assert ingested.returncode == 0, ingested.stderr
+        signals = _read_signals(db)
+        assert len(signals) == 1
+        assert signals[0][2]["source_id"] == "HK-04"
+        assert signals[0][2]["url"] == SOURCE_URLS["HK-04"]
+        assert signals[0][2]["auto_publish"] is False
+        assert signals[0][2]["discord"] is False
+        assert signals[0][2]["public_adapter"] is False
+    finally:
+        _stop(home, pause_restore=True)
