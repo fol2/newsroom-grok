@@ -196,6 +196,45 @@ def grant_envelope(
     }
 
 
+
+def grant_auto_publish(
+    home: Path,
+    *,
+    project_root: Path | None = None,
+) -> dict[str, Any]:
+    from newsroom.auto_publish_grant import (
+        EVENT_TYPE,
+        FIRST_TARGET,
+        SEMANTIC,
+        record_auto_publish_grant,
+    )
+
+    db = ledger_path(home)
+    if not _ledger_present(home):
+        raise FirstBootError(
+            "ledger missing; run newsroom-first-boot start first"
+        )
+    paused = restore_paused(home)
+    was_up = process_is_up(home)
+    if was_up:
+        stop(home)
+    try:
+        record_auto_publish_grant(db)
+    except Exception as exc:
+        if was_up and not paused:
+            start(home, project_root=project_root)
+        raise FirstBootError(f"AUTO_PUBLISH grant failed: {exc}") from exc
+    if was_up and not paused:
+        start(home, project_root=project_root)
+    return {
+        "ok": True,
+        "event_type": EVENT_TYPE,
+        "first_target": FIRST_TARGET,
+        "home": str(home),
+        "ledger_path": str(db),
+        "semantic": SEMANTIC,
+    }
+
 def ingest_signal(
     home: Path,
     *,
@@ -369,6 +408,7 @@ def main(argv: list[str] | None = None) -> int:
             "stop",
             "hold",
             "grant-envelope",
+            "grant-auto-publish",
             "ingest-signal",
             "mint-decision",
             "dispatch-target",
@@ -401,6 +441,9 @@ def main(argv: list[str] | None = None) -> int:
             return hold(home)
         if args.command == "grant-envelope":
             _print_json(grant_envelope(home, project_root=project_root))
+            return 0
+        if args.command == "grant-auto-publish":
+            _print_json(grant_auto_publish(home, project_root=project_root))
             return 0
         if args.command == "ingest-signal":
             _print_json(ingest_signal(home, project_root=project_root))
