@@ -1,4 +1,4 @@
-"""Shared host authority store: hold, envelope grant, first ingest, mint decision."""
+"""Shared host authority store: hold, envelope grant, ingest, mint, dispatch."""
 
 from __future__ import annotations
 
@@ -34,6 +34,10 @@ from newsroom.publication_decision import (
     CONTROLLER_CREDENTIAL,
     decision_command_definition,
     decision_payload_contract,
+)
+from newsroom.target_operation import (
+    operation_command_definition,
+    operation_payload_contract,
 )
 
 
@@ -88,6 +92,7 @@ def open_host_store(path: Path) -> object:
     envelope_contract = envelope_payload_contract()
     signal_contract = signal_payload_contract()
     decision_contract = decision_payload_contract()
+    operation_contract = operation_payload_contract()
     return open_authority_event_system(
         path=path,
         registry=CommandRegistry(
@@ -96,10 +101,17 @@ def open_host_store(path: Path) -> object:
                 envelope_command_definition(envelope_contract),
                 signal_command_definition(signal_contract),
                 decision_command_definition(decision_contract),
+                operation_command_definition(operation_contract),
             ]
         ),
         payload_schemas=PayloadSchemaRegistry(
-            (hold_contract, envelope_contract, signal_contract, decision_contract)
+            (
+                hold_contract,
+                envelope_contract,
+                signal_contract,
+                decision_contract,
+                operation_contract,
+            )
         ),
         authenticator=StaticAuthenticator(
             credentials={
@@ -122,7 +134,11 @@ def open_host_store(path: Path) -> object:
             policy_version="host-store-v1",
             grants_by_principal={
                 "host.newsroom": frozenset(
-                    {"authority.host.hold", "authority.host.read"}
+                    {
+                        "authority.host.hold",
+                        "authority.host.read",
+                        "authority.publication.dispatch",
+                    }
                 ),
                 OWNER_PRINCIPAL: frozenset(
                     {
