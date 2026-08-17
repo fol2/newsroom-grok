@@ -1,4 +1,4 @@
-"""Grok Bot first-boot bring-up, grant, ingest, mint, dispatch, internal-beta publish, AUTO-010 commit, and emergency stop."""
+"""Grok Bot first-boot bring-up, grant, ingest, X-search ingest, mint, dispatch, internal-beta publish, AUTO-010 commit, and emergency stop."""
 
 from __future__ import annotations
 
@@ -339,6 +339,61 @@ def ingest_signal(
     }
 
 
+
+def ingest_x_search(
+    home: Path,
+    *,
+    project_root: Path | None = None,
+) -> dict[str, Any]:
+    from newsroom.envelope_grant import EVENT_TYPE as GRANT_EVENT_TYPE
+    from newsroom.x_search_ingest import (
+        EVENT_TYPE,
+        GATED_X_SEARCH_ADAPTER,
+        load_x_search_hit,
+        record_discovery_signal,
+    )
+
+    db = ledger_path(home)
+    if not _ledger_present(home):
+        raise FirstBootError(
+            "ledger missing; run newsroom-first-boot start first"
+        )
+    if restore_paused(home):
+        raise FirstBootError(
+            "emergency stop is paused; resume is required before X search ingest"
+        )
+    paused = restore_paused(home)
+    was_up = process_is_up(home)
+    if was_up:
+        stop(home)
+    try:
+        _require_envelope_grant(db, GRANT_EVENT_TYPE)
+        source_id, url, item_id = load_x_search_hit()
+        record_discovery_signal(
+            db, source_id=source_id, url=url, item_id=item_id
+        )
+    except FirstBootError:
+        if was_up and not paused:
+            start(home, project_root=project_root)
+        raise
+    except Exception as exc:
+        if was_up and not paused:
+            start(home, project_root=project_root)
+        raise FirstBootError(f"X search ingest failed: {exc}") from exc
+    if was_up and not paused:
+        start(home, project_root=project_root)
+    return {
+        "ok": True,
+        "adapter": GATED_X_SEARCH_ADAPTER,
+        "event_type": EVENT_TYPE,
+        "home": str(home),
+        "item_id": item_id,
+        "ledger_path": str(db),
+        "source_id": source_id,
+        "url": url,
+    }
+
+
 def mint_decision(
     home: Path,
     *,
@@ -567,7 +622,7 @@ def auto_010_commit(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="First-boot bring-up, grant, ingest, mint, dispatch, internal-beta publish, AUTO-010 commit, and emergency stop."
+        description="First-boot bring-up, grant, ingest, X-search ingest, mint, dispatch, internal-beta publish, AUTO-010 commit, and emergency stop."
     )
     parser.add_argument(
         "command",
@@ -580,6 +635,7 @@ def main(argv: list[str] | None = None) -> int:
             "grant-auto-publish",
             "grant-internal-beta",
             "ingest-signal",
+            "ingest-x-search",
             "mint-decision",
             "dispatch-target",
             "dispatch-internal-beta",
@@ -622,6 +678,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "ingest-signal":
             _print_json(ingest_signal(home, project_root=project_root))
+            return 0
+        if args.command == "ingest-x-search":
+            _print_json(ingest_x_search(home, project_root=project_root))
             return 0
         if args.command == "mint-decision":
             _print_json(mint_decision(home, project_root=project_root))

@@ -23,6 +23,10 @@ from newsroom.discovery_ingest import (
     signal_command_definition,
     signal_payload_contract,
 )
+from newsroom.x_search_ingest import (
+    signal_command_definition as x_search_command_definition,
+    signal_payload_contract as x_search_payload_contract,
+)
 from newsroom.auto_publish_grant import (
     auto_publish_command_definition,
     auto_publish_payload_contract,
@@ -105,6 +109,7 @@ def open_host_store(path: Path) -> object:
     auto_publish_contract = auto_publish_payload_contract()
     internal_beta_contract = internal_beta_payload_contract()
     signal_contract = signal_payload_contract()
+    x_search_contract = x_search_payload_contract()
     decision_contract = decision_payload_contract()
     operation_contract = operation_payload_contract()
     publish_contract = publish_payload_contract()
@@ -117,6 +122,7 @@ def open_host_store(path: Path) -> object:
                 auto_publish_command_definition(auto_publish_contract),
                 internal_beta_command_definition(internal_beta_contract),
                 signal_command_definition(signal_contract),
+                x_search_command_definition(x_search_contract),
                 decision_command_definition(decision_contract),
                 operation_command_definition(operation_contract),
                 publish_command_definition(publish_contract),
@@ -129,6 +135,7 @@ def open_host_store(path: Path) -> object:
                 auto_publish_contract,
                 internal_beta_contract,
                 signal_contract,
+                x_search_contract,
                 decision_contract,
                 operation_contract,
                 publish_contract,
