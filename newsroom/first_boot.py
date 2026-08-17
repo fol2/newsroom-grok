@@ -1,4 +1,4 @@
-"""Grok Bot first-boot bring-up, envelope grant, and emergency stop."""
+"""Grok Bot first-boot bring-up, envelope grant, first ingest, and emergency stop."""
 
 from __future__ import annotations
 
@@ -196,13 +196,65 @@ def grant_envelope(
     }
 
 
+def ingest_signal(
+    home: Path,
+    *,
+    project_root: Path | None = None,
+) -> dict[str, Any]:
+    from newsroom.discovery_ingest import (
+        EVENT_TYPE,
+        OFFICIAL_RSS_ADAPTER,
+        first_feed_item_id,
+        load_official_rss_body,
+        record_discovery_signal,
+    )
+    from newsroom.envelope_grant import EVENT_TYPE as GRANT_EVENT_TYPE
+
+    db = ledger_path(home)
+    if not _ledger_present(home):
+        raise FirstBootError(
+            "ledger missing; run newsroom-first-boot start first"
+        )
+    paused = restore_paused(home)
+    was_up = process_is_up(home)
+    if was_up:
+        stop(home)
+    try:
+        _require_envelope_grant(db, GRANT_EVENT_TYPE)
+        source_id, url, body = load_official_rss_body()
+        item_id = first_feed_item_id(body)
+        record_discovery_signal(
+            db, source_id=source_id, url=url, item_id=item_id
+        )
+    except FirstBootError:
+        if was_up and not paused:
+            start(home, project_root=project_root)
+        raise
+    except Exception as exc:
+        if was_up and not paused:
+            start(home, project_root=project_root)
+        raise FirstBootError(f"discovery ingest failed: {exc}") from exc
+    if was_up and not paused:
+        start(home, project_root=project_root)
+    return {
+        "ok": True,
+        "adapter": OFFICIAL_RSS_ADAPTER,
+        "event_type": EVENT_TYPE,
+        "home": str(home),
+        "item_id": item_id,
+        "ledger_path": str(db),
+        "source_id": source_id,
+        "url": url,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="First-boot bring-up, envelope grant, and emergency stop."
+        description="First-boot bring-up, envelope grant, first ingest, and emergency stop."
     )
     parser.add_argument(
         "command",
-        choices=("start", "health", "stop", "hold", "grant-envelope"),
+        choices=("start", "health", "stop", "hold", "grant-envelope", "ingest-signal"),
     )
     parser.add_argument("--home", default=str(SHARED_HOME))
     parser.add_argument("--project-root")
@@ -231,6 +283,9 @@ def main(argv: list[str] | None = None) -> int:
             return hold(home)
         if args.command == "grant-envelope":
             _print_json(grant_envelope(home, project_root=project_root))
+            return 0
+        if args.command == "ingest-signal":
+            _print_json(ingest_signal(home, project_root=project_root))
             return 0
         _print_json(start(home, project_root=project_root, resume=args.resume))
         return 0
@@ -327,6 +382,23 @@ def _clear_pid(home: Path) -> None:
 def _ledger_present(home: Path) -> bool:
     db = ledger_path(home)
     return db.is_file() and not db.is_symlink()
+
+
+def _require_envelope_grant(path: Path, event_type: str) -> None:
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+    try:
+        count = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM ledger_events WHERE event_type=?",
+                (event_type,),
+            ).fetchone()[0]
+        )
+    finally:
+        conn.close()
+    if count < 1:
+        raise FirstBootError(
+            "envelope grant missing; run newsroom-first-boot grant-envelope first"
+        )
 
 
 def _write_restore_pause(home: Path) -> None:
