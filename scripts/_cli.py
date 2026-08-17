@@ -72,3 +72,8 @@ def eval_clustering_metrics() -> None:
 def rss_pool_update() -> None:
     from scripts.rss_pool_update import main
     raise SystemExit(main(sys.argv[1:]))
+
+
+def newsroom_first_boot() -> None:
+    from newsroom.first_boot import main
+    raise SystemExit(main(sys.argv[1:]))

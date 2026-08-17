@@ -50,6 +50,7 @@ newsroom-runner = "scripts._cli:newsroom_runner"
 newsroom-write-run-job = "scripts._cli:newsroom_write_run_job"
 replay-clustering-eval-dataset = "scripts._cli:replay_clustering_eval_dataset"
 rss-pool-update = "scripts._cli:rss_pool_update"
+newsroom-first-boot = "scripts._cli:newsroom_first_boot"
 
 [tool.hatch.build.targets.wheel]
 packages = ["newsroom", "scripts"]
