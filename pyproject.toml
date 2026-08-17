@@ -34,6 +34,9 @@ dev = [
   "pytest-xdist==3.8.0",
 ]
 
+[project.scripts]
+newsroom-first-boot = "scripts._cli:newsroom_first_boot"
+
 [tool.hatch.build.targets.wheel]
 packages = ["newsroom", "scripts"]
 
