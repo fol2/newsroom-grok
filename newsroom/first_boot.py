@@ -1,4 +1,4 @@
-"""Grok Bot first-boot bring-up: uv sync, host process, empty SQLite ledger."""
+"""Grok Bot first-boot bring-up, envelope grant, and emergency stop."""
 
 from __future__ import annotations
 
@@ -33,6 +33,15 @@ def venv_path(home: Path) -> Path:
 
 def pid_path(home: Path) -> Path:
     return Path(home) / "logs" / "store.pid"
+
+
+def restore_pause_path(home: Path) -> Path:
+    return Path(home) / "logs" / "restore.paused"
+
+
+def restore_paused(home: Path) -> bool:
+    path = restore_pause_path(home)
+    return path.is_file() and not path.is_symlink()
 
 
 def resolve_project_root(explicit: Path | None = None) -> Path:
@@ -85,26 +94,33 @@ def start(
     *,
     project_root: Path | None = None,
     uv_bin: str = "uv",
+    resume: bool = False,
 ) -> dict[str, Any]:
+    if restore_paused(home) and not resume:
+        raise FirstBootError(
+            "Newsroom first-boot restore is paused; pass --resume to return"
+        )
+    if resume:
+        _clear_restore_pause(home)
     root = resolve_project_root(project_root)
     _prepare_home(home)
     _sync_venv(home, root, uv_bin)
-    if process_is_up(home) and assess_health(home)["ok"]:
+    if process_is_up(home) and _ledger_present(home):
         return _start_report(home, pid=_read_pid(home))
     if process_is_up(home):
         stop(home)
     _spawn_hold(home, root)
-    report = _wait_healthy(home)
-    if not report["ok"]:
+    report = _wait_ready(home)
+    if not (report["process_up"] and report["ledger_exists"]):
         stop(home)
         raise FirstBootError(
-            "first-boot health did not pass after bring-up: "
+            "host process did not come up with a ledger after bring-up: "
             + json.dumps(report, sort_keys=True)
         )
     return _start_report(home, pid=report.get("pid"))
 
 
-def stop(home: Path) -> dict[str, Any]:
+def stop(home: Path, *, pause_restore: bool = False) -> dict[str, Any]:
     pid = _read_pid(home)
     if pid is not None and process_is_up(home):
         os.kill(pid, signal.SIGTERM)
@@ -114,7 +130,13 @@ def stop(home: Path) -> dict[str, Any]:
         if process_is_up(home):
             os.kill(pid, signal.SIGKILL)
     _clear_pid(home)
-    return {"ok": True, "home": str(home)}
+    if pause_restore:
+        _write_restore_pause(home)
+    return {
+        "ok": True,
+        "home": str(home),
+        "restore_paused": restore_paused(home),
+    }
 
 
 def hold(home: Path) -> int:
@@ -137,13 +159,63 @@ def hold(home: Path) -> int:
     return 0
 
 
+def grant_envelope(
+    home: Path,
+    *,
+    project_root: Path | None = None,
+) -> dict[str, Any]:
+    from newsroom.envelope_grant import (
+        CONTROLLER_ID,
+        EVENT_TYPE,
+        record_envelope_grant,
+    )
+
+    db = ledger_path(home)
+    if not _ledger_present(home):
+        raise FirstBootError(
+            "ledger missing; run newsroom-first-boot start first"
+        )
+    paused = restore_paused(home)
+    was_up = process_is_up(home)
+    if was_up:
+        stop(home)
+    try:
+        record_envelope_grant(db)
+    except Exception as exc:
+        if was_up and not paused:
+            start(home, project_root=project_root)
+        raise FirstBootError(f"envelope grant failed: {exc}") from exc
+    if was_up and not paused:
+        start(home, project_root=project_root)
+    return {
+        "ok": True,
+        "controller": CONTROLLER_ID,
+        "event_type": EVENT_TYPE,
+        "home": str(home),
+        "ledger_path": str(db),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="First-boot bring-up and health for the trusted-operator host."
+        description="First-boot bring-up, envelope grant, and emergency stop."
     )
-    parser.add_argument("command", choices=("start", "health", "stop", "hold"))
+    parser.add_argument(
+        "command",
+        choices=("start", "health", "stop", "hold", "grant-envelope"),
+    )
     parser.add_argument("--home", default=str(SHARED_HOME))
     parser.add_argument("--project-root")
+    parser.add_argument(
+        "--pause-restore",
+        action="store_true",
+        help="Pause Newsroom first-boot restore so the process does not auto-return.",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Clear a restore pause and bring the host process up.",
+    )
     args = parser.parse_args(argv)
     home = Path(args.home).expanduser().resolve()
     project_root = Path(args.project_root).expanduser() if args.project_root else None
@@ -153,11 +225,14 @@ def main(argv: list[str] | None = None) -> int:
             _print_json(report)
             return 0 if report["ok"] else 1
         if args.command == "stop":
-            _print_json(stop(home))
+            _print_json(stop(home, pause_restore=args.pause_restore))
             return 0
         if args.command == "hold":
             return hold(home)
-        _print_json(start(home, project_root=project_root))
+        if args.command == "grant-envelope":
+            _print_json(grant_envelope(home, project_root=project_root))
+            return 0
+        _print_json(start(home, project_root=project_root, resume=args.resume))
         return 0
     except FirstBootError as exc:
         print(str(exc), file=sys.stderr)
@@ -216,12 +291,12 @@ def _spawn_hold(home: Path, project_root: Path) -> None:
         )
 
 
-def _wait_healthy(home: Path) -> dict[str, Any]:
+def _wait_ready(home: Path) -> dict[str, Any]:
     deadline = time.monotonic() + _HOLD_WAIT_SECONDS
     report = assess_health(home)
     while time.monotonic() < deadline:
         report = assess_health(home)
-        if report["ok"]:
+        if report["process_up"] and report["ledger_exists"]:
             return report
         time.sleep(_HOLD_POLL_SECONDS)
     return report
@@ -249,6 +324,26 @@ def _clear_pid(home: Path) -> None:
         path.unlink()
 
 
+def _ledger_present(home: Path) -> bool:
+    db = ledger_path(home)
+    return db.is_file() and not db.is_symlink()
+
+
+def _write_restore_pause(home: Path) -> None:
+    logs = Path(home) / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    os.chmod(logs, 0o700)
+    path = restore_pause_path(home)
+    path.write_text("paused\n", encoding="utf-8")
+    os.chmod(path, 0o600)
+
+
+def _clear_restore_pause(home: Path) -> None:
+    path = restore_pause_path(home)
+    if path.is_file() and not path.is_symlink():
+        path.unlink()
+
+
 def _read_ledger_emptiness(path: Path) -> tuple[bool, int, int]:
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
     try:
@@ -270,95 +365,9 @@ def _read_ledger_emptiness(path: Path) -> tuple[bool, int, int]:
 
 
 def _open_host_store(path: Path) -> Any:
-    from newsroom.authority import (
-        CommandDefinition,
-        CommandRegistry,
-        EventReadPolicy,
-        MetadataClass,
-        PayloadGoldenVector,
-        PayloadMode,
-        PayloadSchemaContract,
-        PayloadSchemaRegistry,
-        StaticAuthenticator,
-        StaticAuthorizer,
-        StaticPrincipal,
-        TrustScope,
-        open_authority_event_system,
-    )
+    from newsroom.host_store import open_host_store
 
-    def canonicalize_none(value: object) -> bytes:
-        if value is None:
-            return b""
-        raise ValueError("host hold accepts no payload")
-
-    contract = PayloadSchemaContract(
-        schema_version="host_hold_v1",
-        payload_mode=PayloadMode.NO_PAYLOAD,
-        contract_version="host-hold-contract-v1",
-        canonicalizer_implementation_version="host-hold-none-v1",
-        canonicalizer=canonicalize_none,
-        golden_vectors=(
-            PayloadGoldenVector(
-                name="empty",
-                input_identity="none-v1",
-                value=None,
-                expected_bytes=b"",
-            ),
-        ),
-    )
-    definition = CommandDefinition(
-        command_type="host.hold",
-        definition_version="v1",
-        aggregate_type="host.process",
-        event_type="host.hold.recorded",
-        event_schema_version=1,
-        payload_mode=PayloadMode.NO_PAYLOAD,
-        payload_schema_version=contract.schema_version,
-        payload_schema_contract_version=contract.contract_version,
-        payload_schema_contract_digest=contract.contract_digest,
-        payload_canonicalizer_version=contract.canonicalizer_implementation_version,
-        trust_scope=TrustScope.OBSERVED,
-        security_scope="authority.host",
-        retention_scope="authority.host",
-        required_scope="authority.host.hold",
-    )
-    return open_authority_event_system(
-        path=path,
-        registry=CommandRegistry([definition]),
-        payload_schemas=PayloadSchemaRegistry((contract,)),
-        authenticator=StaticAuthenticator(
-            credentials={
-                "host-process": StaticPrincipal(
-                    "host.newsroom",
-                    assurance_class="HOST_PROCESS",
-                )
-            },
-            authority_domain="newsroom.host",
-        ),
-        authorizer=StaticAuthorizer(
-            policy_version="host-hold-v1",
-            grants_by_principal={
-                "host.newsroom": frozenset(
-                    {"authority.host.hold", "authority.host.read"}
-                )
-            },
-        ),
-        event_read_policy=EventReadPolicy(
-            policy_id="host-hold-read-v1",
-            purpose="host.hold.audit",
-            required_scope="authority.host.read",
-            allowed_principal_ids=frozenset({"host.newsroom"}),
-            allowed_security_scopes=frozenset({"authority.host"}),
-            allowed_trust_scopes=frozenset({TrustScope.OBSERVED}),
-            metadata_classes=frozenset(
-                {
-                    MetadataClass.ROUTING,
-                    MetadataClass.PROVENANCE,
-                    MetadataClass.RESULT,
-                }
-            ),
-        ),
-    )
+    return open_host_store(path)
 
 
 def _print_json(value: dict[str, Any]) -> None:
