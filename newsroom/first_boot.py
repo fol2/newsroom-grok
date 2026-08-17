@@ -1,8 +1,4 @@
-"""Grok Bot first-boot bring-up: uv sync, host process, empty SQLite ledger.
-
-`start` is the re-runnable bring-up after Update, Reset, or a dead store
-process. It is not a supervisor loop and not launchd.
-"""
+"""Grok Bot first-boot bring-up: uv sync, host process, empty SQLite ledger."""
 
 from __future__ import annotations
 
@@ -56,7 +52,7 @@ def process_is_up(home: Path) -> bool:
         os.kill(pid, 0)
     except OSError:
         return False
-    return _pid_is_our_hold(pid, home)
+    return True
 
 
 def assess_health(home: Path) -> dict[str, Any]:
@@ -239,21 +235,6 @@ def _read_pid(home: Path) -> int | None:
         return int(path.read_text(encoding="utf-8").strip())
     except ValueError:
         return None
-
-
-def _pid_is_our_hold(pid: int, home: Path) -> bool:
-    try:
-        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
-    except OSError:
-        return False
-    parts = [part.decode("utf-8", "replace") for part in raw.split(b"\0") if part]
-    if "newsroom.first_boot" not in parts or "hold" not in parts:
-        return False
-    try:
-        listed = Path(parts[parts.index("--home") + 1]).expanduser().resolve()
-        return listed == Path(home).resolve()
-    except (IndexError, OSError, ValueError):
-        return False
 
 
 def _write_pid(home: Path, pid: int) -> None:
