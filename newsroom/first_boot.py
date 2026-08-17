@@ -1,4 +1,4 @@
-"""Grok Bot first-boot bring-up, envelope grant, first ingest, mint decision, and emergency stop."""
+"""Grok Bot first-boot bring-up, grant, ingest, mint, dispatch, and emergency stop."""
 
 from __future__ import annotations
 
@@ -293,9 +293,73 @@ def mint_decision(
     }
 
 
+def dispatch_target(
+    home: Path,
+    *,
+    project_root: Path | None = None,
+) -> dict[str, Any]:
+    from newsroom.envelope_grant import EVENT_TYPE as GRANT_EVENT_TYPE
+    from newsroom.publication_decision import (
+        bundle_digest_for_signal,
+        load_first_discovery_signal,
+    )
+    from newsroom.target_operation import (
+        DISPATCHER_ID,
+        EVENT_TYPE,
+        LEDGER_TARGET,
+        load_first_authorising_decision,
+        record_target_operation,
+    )
+
+    db = ledger_path(home)
+    if not _ledger_present(home):
+        raise FirstBootError(
+            "ledger missing; run newsroom-first-boot start first"
+        )
+    paused = restore_paused(home)
+    was_up = process_is_up(home)
+    if was_up:
+        stop(home)
+    try:
+        _require_envelope_grant(db, GRANT_EVENT_TYPE)
+        signal = load_first_discovery_signal(db)
+        decision = load_first_authorising_decision(db)
+        expected = bundle_digest_for_signal(signal)
+        if decision["bundle_digest"] != expected:
+            raise ValueError(
+                "publication decision digest does not match first Discovery Signal"
+            )
+        recorded = record_target_operation(
+            db, bundle_digest=decision["bundle_digest"]
+        )
+    except FirstBootError:
+        if was_up and not paused:
+            start(home, project_root=project_root)
+        raise
+    except Exception as exc:
+        if was_up and not paused:
+            start(home, project_root=project_root)
+        raise FirstBootError(f"target operation dispatch failed: {exc}") from exc
+    if was_up and not paused:
+        start(home, project_root=project_root)
+    return {
+        "ok": True,
+        "auto_publish": False,
+        "bundle_digest": recorded["bundle_digest"],
+        "discord": False,
+        "dispatcher": DISPATCHER_ID,
+        "event_type": EVENT_TYPE,
+        "home": str(home),
+        "ledger_path": str(db),
+        "operation": recorded["operation"],
+        "public_adapter": False,
+        "target": LEDGER_TARGET,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="First-boot bring-up, envelope grant, first ingest, mint decision, and emergency stop."
+        description="First-boot bring-up, grant, ingest, mint, dispatch, and emergency stop."
     )
     parser.add_argument(
         "command",
@@ -307,6 +371,7 @@ def main(argv: list[str] | None = None) -> int:
             "grant-envelope",
             "ingest-signal",
             "mint-decision",
+            "dispatch-target",
         ),
     )
     parser.add_argument("--home", default=str(SHARED_HOME))
@@ -342,6 +407,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "mint-decision":
             _print_json(mint_decision(home, project_root=project_root))
+            return 0
+        if args.command == "dispatch-target":
+            _print_json(dispatch_target(home, project_root=project_root))
             return 0
         _print_json(start(home, project_root=project_root, resume=args.resume))
         return 0
