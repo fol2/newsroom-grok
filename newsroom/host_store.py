@@ -43,6 +43,10 @@ from newsroom.publication_decision import (
     decision_command_definition,
     decision_payload_contract,
 )
+from newsroom.internal_beta_publish import (
+    publish_command_definition,
+    publish_payload_contract,
+)
 from newsroom.target_operation import (
     operation_command_definition,
     operation_payload_contract,
@@ -103,6 +107,7 @@ def open_host_store(path: Path) -> object:
     signal_contract = signal_payload_contract()
     decision_contract = decision_payload_contract()
     operation_contract = operation_payload_contract()
+    publish_contract = publish_payload_contract()
     return open_authority_event_system(
         path=path,
         registry=CommandRegistry(
@@ -114,6 +119,7 @@ def open_host_store(path: Path) -> object:
                 signal_command_definition(signal_contract),
                 decision_command_definition(decision_contract),
                 operation_command_definition(operation_contract),
+                publish_command_definition(publish_contract),
             ]
         ),
         payload_schemas=PayloadSchemaRegistry(
@@ -125,6 +131,7 @@ def open_host_store(path: Path) -> object:
                 signal_contract,
                 decision_contract,
                 operation_contract,
+                publish_contract,
             )
         ),
         authenticator=StaticAuthenticator(
