@@ -6,8 +6,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-from lxml import etree
-
 from newsroom.authority import (
     AggregateId,
     AuthenticationProof,
@@ -138,6 +136,8 @@ def signal_command_definition(
 
 
 def first_feed_item_id(body: bytes) -> str:
+    from lxml import etree
+
     if type(body) is not bytes or not body:
         raise ValueError("RSS body is required")
     if len(body) > MAX_BODY_BYTES:
@@ -228,13 +228,16 @@ def _bound_item_id(value: object) -> str:
     return value
 
 
-def _local_name(element: etree._Element) -> str:
-    if not isinstance(element.tag, str):
+def _local_name(element: Any) -> str:
+    from lxml import etree
+
+    tag = getattr(element, "tag", None)
+    if not isinstance(tag, str):
         return ""
     return etree.QName(element).localname.lower()
 
 
-def _child_text(element: etree._Element, local: str) -> str:
+def _child_text(element: Any, local: str) -> str:
     for child in element:
         if _local_name(child) != local:
             continue
@@ -247,7 +250,7 @@ def _child_text(element: etree._Element, local: str) -> str:
     return ""
 
 
-def _rss_item_id(item: etree._Element) -> str:
+def _rss_item_id(item: Any) -> str:
     for field in ("guid", "link", "title"):
         value = _child_text(item, field)
         if value:
@@ -255,7 +258,7 @@ def _rss_item_id(item: etree._Element) -> str:
     raise ValueError("RSS item has no identity")
 
 
-def _atom_entry_id(entry: etree._Element) -> str:
+def _atom_entry_id(entry: Any) -> str:
     for field in ("id", "link", "title"):
         value = _child_text(entry, field)
         if value:
