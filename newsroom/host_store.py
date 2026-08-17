@@ -27,6 +27,10 @@ from newsroom.auto_publish_grant import (
     auto_publish_command_definition,
     auto_publish_payload_contract,
 )
+from newsroom.internal_beta_grant import (
+    internal_beta_command_definition,
+    internal_beta_payload_contract,
+)
 from newsroom.envelope_grant import (
     CONTROLLER_ID,
     OWNER_CREDENTIAL,
@@ -95,6 +99,7 @@ def open_host_store(path: Path) -> object:
     hold_contract = hold_payload_contract()
     envelope_contract = envelope_payload_contract()
     auto_publish_contract = auto_publish_payload_contract()
+    internal_beta_contract = internal_beta_payload_contract()
     signal_contract = signal_payload_contract()
     decision_contract = decision_payload_contract()
     operation_contract = operation_payload_contract()
@@ -105,6 +110,7 @@ def open_host_store(path: Path) -> object:
                 hold_command_definition(hold_contract),
                 envelope_command_definition(envelope_contract),
                 auto_publish_command_definition(auto_publish_contract),
+                internal_beta_command_definition(internal_beta_contract),
                 signal_command_definition(signal_contract),
                 decision_command_definition(decision_contract),
                 operation_command_definition(operation_contract),
@@ -115,6 +121,7 @@ def open_host_store(path: Path) -> object:
                 hold_contract,
                 envelope_contract,
                 auto_publish_contract,
+                internal_beta_contract,
                 signal_contract,
                 decision_contract,
                 operation_contract,
@@ -151,6 +158,7 @@ def open_host_store(path: Path) -> object:
                     {
                         "authority.envelope.grant",
                         "authority.autopublish.grant",
+                        "authority.internal_beta.grant",
                         "authority.discovery.ingest",
                         "authority.host.read",
                     }

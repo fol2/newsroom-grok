@@ -235,6 +235,58 @@ def grant_auto_publish(
         "semantic": SEMANTIC,
     }
 
+
+def grant_internal_beta(
+    home: Path,
+    *,
+    project_root: Path | None = None,
+) -> dict[str, Any]:
+    from newsroom.internal_beta_grant import (
+        BUNDLE_DIGEST,
+        EVENT_TYPE,
+        OPERATION,
+        SOURCE_ID,
+        TARGET,
+        record_internal_beta_grant,
+    )
+
+    db = ledger_path(home)
+    if not _ledger_present(home):
+        raise FirstBootError(
+            "ledger missing; run newsroom-first-boot start first"
+        )
+    if restore_paused(home):
+        raise FirstBootError(
+            "emergency stop is paused; resume is required before internal beta grant"
+        )
+    paused = restore_paused(home)
+    was_up = process_is_up(home)
+    if was_up:
+        stop(home)
+    try:
+        record_internal_beta_grant(db)
+    except Exception as exc:
+        if was_up and not paused:
+            start(home, project_root=project_root)
+        raise FirstBootError(f"internal beta grant failed: {exc}") from exc
+    if was_up and not paused:
+        start(home, project_root=project_root)
+    return {
+        "ok": True,
+        "auto_publish": False,
+        "bundle_digest": BUNDLE_DIGEST,
+        "discord": False,
+        "event_type": EVENT_TYPE,
+        "home": str(home),
+        "ledger_path": str(db),
+        "operation": OPERATION,
+        "public_adapter": False,
+        "source_id": SOURCE_ID,
+        "target": TARGET,
+        "x_as_publisher": False,
+    }
+
+
 def ingest_signal(
     home: Path,
     *,
@@ -471,6 +523,7 @@ def main(argv: list[str] | None = None) -> int:
             "hold",
             "grant-envelope",
             "grant-auto-publish",
+            "grant-internal-beta",
             "ingest-signal",
             "mint-decision",
             "dispatch-target",
@@ -507,6 +560,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "grant-auto-publish":
             _print_json(grant_auto_publish(home, project_root=project_root))
+            return 0
+        if args.command == "grant-internal-beta":
+            _print_json(grant_internal_beta(home, project_root=project_root))
             return 0
         if args.command == "ingest-signal":
             _print_json(ingest_signal(home, project_root=project_root))
