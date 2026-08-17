@@ -349,3 +349,58 @@ def test_emergency_stop_still_holds_after_auto_010_commit(tmp_path: Path) -> Non
         assert _count(db, OPERATION_EVENT_TYPE) == 1
     finally:
         _stop(home, pause_restore=True)
+
+
+def test_auto_010_commit_refuses_while_emergency_stop_is_paused(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "newsroom"
+    pause = home / "logs" / PAUSE_RESTORE_NAME
+    _install_uv_stub(tmp_path)
+    try:
+        _bring_up_to_grant(home, tmp_path)
+        db = ledger_path(home)
+        assert _read_events(db, DECISION_EVENT_TYPE) == []
+        assert _read_events(db, OPERATION_EVENT_TYPE) == []
+
+        stopped = _cli("stop", "--pause-restore", home=home)
+        assert stopped.returncode == 0, stopped.stderr
+        assert pause.is_file()
+
+        refused = _cli("auto-010-commit", home=home)
+        assert refused.returncode != 0
+        report = json.loads(refused.stdout)
+        assert report["ok"] is False
+        error = report["error"].lower()
+        assert "pause" in error
+        assert "resume" in error
+        assert _read_events(db, DECISION_EVENT_TYPE) == []
+        assert _read_events(db, OPERATION_EVENT_TYPE) == []
+        assert _count(db, DECISION_EVENT_TYPE) == 0
+        assert _count(db, OPERATION_EVENT_TYPE) == 0
+        assert pause.is_file()
+
+        auto = _cli("start", home=home)
+        assert auto.returncode != 0
+        health = json.loads(_cli("health", home=home).stdout)
+        assert health["process_up"] is False
+        assert health["pid"] is None
+        assert pause.is_file()
+
+        still = _cli("auto-010-commit", home=home)
+        assert still.returncode != 0
+        still_report = json.loads(still.stdout)
+        assert still_report["ok"] is False
+        assert _read_events(db, DECISION_EVENT_TYPE) == []
+        assert _read_events(db, OPERATION_EVENT_TYPE) == []
+
+        resumed = _cli("start", "--resume", home=home)
+        assert resumed.returncode == 0, resumed.stderr
+        assert not pause.is_file()
+
+        committed = _cli("auto-010-commit", home=home)
+        assert committed.returncode == 0, committed.stderr
+        assert _count(db, DECISION_EVENT_TYPE) == 1
+        assert _count(db, OPERATION_EVENT_TYPE) == 1
+    finally:
+        _stop(home, pause_restore=True)

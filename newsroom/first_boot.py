@@ -417,6 +417,10 @@ def auto_010_commit(
         raise FirstBootError(
             "hold applies; AUTO-010 does not age into publish (AUTO-054)"
         )
+    if restore_paused(home):
+        raise FirstBootError(
+            "emergency stop is paused; resume is required before AUTO-010 commit"
+        )
     paused = restore_paused(home)
     was_up = process_is_up(home)
     if was_up:
