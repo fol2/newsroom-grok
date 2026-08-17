@@ -202,6 +202,7 @@ def test_bring_up_restores_health_on_the_same_shared_ledger_after_process_death(
     workspace_db = ROOT / "data" / "authority.sqlite3"
     workspace_db_existed = workspace_db.exists()
     _install_uv_stub(tmp_path)
+    reused = subprocess.Popen(["sleep", "120"])
     try:
         start = _cli("start", home=home)
         assert start.returncode == 0, start.stderr
@@ -217,7 +218,7 @@ def test_bring_up_restores_health_on_the_same_shared_ledger_after_process_death(
         assert dead["ledger_path"] == str(db)
         assert db.is_file()
 
-        pid_path(home).write_text(f"{os.getpid()}\n", encoding="utf-8")
+        pid_path(home).write_text(f"{reused.pid}\n", encoding="utf-8")
         restore = _cli("start", home=home)
         assert restore.returncode == 0, restore.stderr
         restored = json.loads(restore.stdout)
@@ -229,7 +230,8 @@ def test_bring_up_restores_health_on_the_same_shared_ledger_after_process_death(
         assert report["ledger_exists"] is True
         assert report["ledger_empty"] is True
         assert report["ledger_path"] == str(db)
-        assert report["pid"] != os.getpid()
+        assert report["pid"] != reused.pid
+        assert reused.poll() is None
         assert restored["ledger_path"] == str(db)
         assert restored["pid"] == report["pid"]
 
@@ -238,9 +240,11 @@ def test_bring_up_restores_health_on_the_same_shared_ledger_after_process_death(
         parts = _cmdline_parts(int(report["pid"]))
         assert "newsroom.first_boot" in parts
         assert "hold" in parts
-        assert str(home) in parts
+        assert str(home.resolve()) in parts
         if not workspace_db_existed:
             assert not workspace_db.exists()
         assert list(home.glob(".env*")) == []
     finally:
+        reused.send_signal(signal.SIGTERM)
+        reused.wait(timeout=5)
         _stop(home)
