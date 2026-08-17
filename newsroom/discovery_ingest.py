@@ -35,6 +35,15 @@ MAX_ITEM_ID_BYTES = 256
 RSS_SOURCE_IDS = frozenset(
     {"UK-01", "UK-05", "UK-10", "HK-01", "HK-04", "RAD-01", "RAD-02"}
 )
+SIGNAL_AGGREGATE_IDS = {
+    "HK-01": SIGNAL_AGGREGATE_ID,
+    "HK-04": AggregateId.parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa61"),
+    "RAD-01": AggregateId.parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa62"),
+    "RAD-02": AggregateId.parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa63"),
+    "UK-01": AggregateId.parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa64"),
+    "UK-05": AggregateId.parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa65"),
+    "UK-10": AggregateId.parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa66"),
+}
 PAYLOAD_KEYS = (
     "adapter",
     "auto_publish",
@@ -56,6 +65,20 @@ SAMPLE_PAYLOAD: dict[str, Any] = {
 }
 
 
+def resolve_rss_source_id(source_id: str | None) -> str:
+    selected = DEFAULT_SOURCE_ID if source_id is None else source_id
+    if not isinstance(selected, str) or selected not in RSS_SOURCE_IDS:
+        raise ValueError("source must be an official Source Definition RSS endpoint")
+    return selected
+
+
+def signal_idempotency_key(source_id: str) -> str:
+    selected = resolve_rss_source_id(source_id)
+    if selected == DEFAULT_SOURCE_ID:
+        return IDEMPOTENCY_KEY
+    return f"production-discovery-signal-{selected}-v1"
+
+
 def canonicalize_signal_payload(value: object) -> bytes:
     if not isinstance(value, dict):
         raise ValueError("discovery signal payload must be an object")
@@ -69,9 +92,7 @@ def canonicalize_signal_payload(value: object) -> bytes:
         raise ValueError("Discord stays off")
     if value["public_adapter"] is not False:
         raise ValueError("public adapters stay off")
-    source_id = value["source_id"]
-    if source_id not in RSS_SOURCE_IDS:
-        raise ValueError("source must be an official Source Definition RSS endpoint")
+    source_id = resolve_rss_source_id(value["source_id"])
     url = value["url"]
     if not isinstance(url, str) or url != SOURCE_URLS[source_id]:
         raise ValueError("url must match the official Source Definition")
@@ -164,8 +185,8 @@ def first_feed_item_id(body: bytes) -> str:
     raise ValueError("RSS/Atom feed has no item")
 
 
-def load_official_rss_body() -> tuple[str, str, bytes]:
-    source_id = DEFAULT_SOURCE_ID
+def load_official_rss_body(source_id: str | None = None) -> tuple[str, str, bytes]:
+    source_id = resolve_rss_source_id(source_id)
     url = SOURCE_URLS[source_id]
     assert_allowed_url(url)
     override = os.environ.get("NEWSROOM_INGEST_BODY_PATH", "").strip()
@@ -192,13 +213,14 @@ def record_discovery_signal(
 ) -> None:
     from newsroom.host_store import open_host_store
 
+    selected = resolve_rss_source_id(source_id)
     payload = {
         "adapter": OFFICIAL_RSS_ADAPTER,
         "auto_publish": False,
         "discord": False,
         "item_id": item_id,
         "public_adapter": False,
-        "source_id": source_id,
+        "source_id": selected,
         "url": url,
     }
     system = open_host_store(path)
@@ -206,10 +228,10 @@ def record_discovery_signal(
         system.commands.execute(
             SemanticCommand(
                 command_type=COMMAND_TYPE,
-                aggregate_id=SIGNAL_AGGREGATE_ID,
+                aggregate_id=SIGNAL_AGGREGATE_IDS[selected],
                 expected_aggregate_version=0,
                 payload=InlinePayload(payload),
-                idempotency_key=IDEMPOTENCY_KEY,
+                idempotency_key=signal_idempotency_key(selected),
             ),
             proof=AuthenticationProof(
                 method="STATIC_TOKEN",

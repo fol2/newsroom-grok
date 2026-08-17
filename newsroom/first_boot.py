@@ -291,6 +291,7 @@ def ingest_signal(
     home: Path,
     *,
     project_root: Path | None = None,
+    source_id: str | None = None,
 ) -> dict[str, Any]:
     from newsroom.discovery_ingest import (
         EVENT_TYPE,
@@ -298,6 +299,7 @@ def ingest_signal(
         first_feed_item_id,
         load_official_rss_body,
         record_discovery_signal,
+        resolve_rss_source_id,
     )
     from newsroom.envelope_grant import EVENT_TYPE as GRANT_EVENT_TYPE
 
@@ -306,16 +308,24 @@ def ingest_signal(
         raise FirstBootError(
             "ledger missing; run newsroom-first-boot start first"
         )
+    if restore_paused(home):
+        raise FirstBootError(
+            "emergency stop is paused; resume is required before discovery ingest"
+        )
+    try:
+        selected = resolve_rss_source_id(source_id)
+    except ValueError as exc:
+        raise FirstBootError(str(exc)) from exc
     paused = restore_paused(home)
     was_up = process_is_up(home)
     if was_up:
         stop(home)
     try:
         _require_envelope_grant(db, GRANT_EVENT_TYPE)
-        source_id, url, body = load_official_rss_body()
+        loaded_id, url, body = load_official_rss_body(selected)
         item_id = first_feed_item_id(body)
         record_discovery_signal(
-            db, source_id=source_id, url=url, item_id=item_id
+            db, source_id=loaded_id, url=url, item_id=item_id
         )
     except FirstBootError:
         if was_up and not paused:
@@ -330,11 +340,14 @@ def ingest_signal(
     return {
         "ok": True,
         "adapter": OFFICIAL_RSS_ADAPTER,
+        "auto_publish": False,
+        "discord": False,
         "event_type": EVENT_TYPE,
         "home": str(home),
         "item_id": item_id,
         "ledger_path": str(db),
-        "source_id": source_id,
+        "public_adapter": False,
+        "source_id": loaded_id,
         "url": url,
     }
 
@@ -598,6 +611,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Clear a restore pause and bring the host process up.",
     )
+    parser.add_argument(
+        "--source-id",
+        default=None,
+        help="Official Source Definition RSS/Atom id (default HK-01).",
+    )
     args = parser.parse_args(argv)
     home = Path(args.home).expanduser().resolve()
     project_root = Path(args.project_root).expanduser() if args.project_root else None
@@ -621,7 +639,13 @@ def main(argv: list[str] | None = None) -> int:
             _print_json(grant_internal_beta(home, project_root=project_root))
             return 0
         if args.command == "ingest-signal":
-            _print_json(ingest_signal(home, project_root=project_root))
+            _print_json(
+                ingest_signal(
+                    home,
+                    project_root=project_root,
+                    source_id=args.source_id,
+                )
+            )
             return 0
         if args.command == "mint-decision":
             _print_json(mint_decision(home, project_root=project_root))
