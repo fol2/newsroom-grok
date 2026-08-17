@@ -1,4 +1,4 @@
-"""Grok Bot first-boot bring-up, grant, ingest, mint, dispatch, and emergency stop."""
+"""Grok Bot first-boot bring-up, grant, ingest, mint, dispatch, AUTO-010 commit, and emergency stop."""
 
 from __future__ import annotations
 
@@ -396,9 +396,71 @@ def dispatch_target(
     }
 
 
+
+def auto_010_commit(
+    home: Path,
+    *,
+    project_root: Path | None = None,
+) -> dict[str, Any]:
+    from newsroom.auto_010_commit import hold_applies, record_auto_010_commit
+    from newsroom.auto_publish_grant import EVENT_TYPE as AUTO_PUBLISH_EVENT_TYPE
+    from newsroom.envelope_grant import EVENT_TYPE as GRANT_EVENT_TYPE
+    from newsroom.publication_decision import EVENT_TYPE as DECISION_EVENT_TYPE
+    from newsroom.target_operation import EVENT_TYPE as OPERATION_EVENT_TYPE
+
+    db = ledger_path(home)
+    if not _ledger_present(home):
+        raise FirstBootError(
+            "ledger missing; run newsroom-first-boot start first"
+        )
+    if hold_applies(home):
+        raise FirstBootError(
+            "hold applies; AUTO-010 does not age into publish (AUTO-054)"
+        )
+    if restore_paused(home):
+        raise FirstBootError(
+            "emergency stop is paused; resume is required before AUTO-010 commit"
+        )
+    paused = restore_paused(home)
+    was_up = process_is_up(home)
+    if was_up:
+        stop(home)
+    try:
+        _require_envelope_grant(db, GRANT_EVENT_TYPE)
+        _require_auto_publish_grant(db, AUTO_PUBLISH_EVENT_TYPE)
+        recorded = record_auto_010_commit(db)
+    except FirstBootError:
+        if was_up and not paused:
+            start(home, project_root=project_root)
+        raise
+    except Exception as exc:
+        if was_up and not paused:
+            start(home, project_root=project_root)
+        raise FirstBootError(f"AUTO-010 commit failed: {exc}") from exc
+    if was_up and not paused:
+        start(home, project_root=project_root)
+    return {
+        "ok": True,
+        "auto_publish": False,
+        "bundle_digest": recorded["bundle_digest"],
+        "discord": False,
+        "every_applicable_gate_passed": recorded["every_applicable_gate_passed"],
+        "first_target": recorded["first_target"],
+        "hold": False,
+        "home": str(home),
+        "ledger_path": str(db),
+        "operation": recorded["operation"],
+        "public_adapter": False,
+        "publication_decision": DECISION_EVENT_TYPE,
+        "semantic": recorded["semantic"],
+        "target": recorded["target"],
+        "target_operation": OPERATION_EVENT_TYPE,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="First-boot bring-up, grant, ingest, mint, dispatch, and emergency stop."
+        description="First-boot bring-up, grant, ingest, mint, dispatch, AUTO-010 commit, and emergency stop."
     )
     parser.add_argument(
         "command",
@@ -412,6 +474,7 @@ def main(argv: list[str] | None = None) -> int:
             "ingest-signal",
             "mint-decision",
             "dispatch-target",
+            "auto-010-commit",
         ),
     )
     parser.add_argument("--home", default=str(SHARED_HOME))
@@ -453,6 +516,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "dispatch-target":
             _print_json(dispatch_target(home, project_root=project_root))
+            return 0
+        if args.command == "auto-010-commit":
+            _print_json(auto_010_commit(home, project_root=project_root))
             return 0
         _print_json(start(home, project_root=project_root, resume=args.resume))
         return 0
@@ -565,6 +631,24 @@ def _require_envelope_grant(path: Path, event_type: str) -> None:
     if count < 1:
         raise FirstBootError(
             "envelope grant missing; run newsroom-first-boot grant-envelope first"
+        )
+
+
+
+def _require_auto_publish_grant(path: Path, event_type: str) -> None:
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+    try:
+        count = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM ledger_events WHERE event_type=?",
+                (event_type,),
+            ).fetchone()[0]
+        )
+    finally:
+        conn.close()
+    if count < 1:
+        raise FirstBootError(
+            "AUTO_PUBLISH grant missing; run newsroom-first-boot grant-auto-publish first"
         )
 
 
