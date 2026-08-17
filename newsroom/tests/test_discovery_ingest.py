@@ -244,3 +244,325 @@ def test_emergency_stop_still_holds_after_ingest(tmp_path: Path) -> None:
         assert len(_read_signals(ledger_path(home))) == 1
     finally:
         _stop(home, pause_restore=True)
+
+
+REMAINING_RSS_SOURCE_IDS = ("HK-04", "RAD-01", "RAD-02", "UK-01", "UK-05", "UK-10")
+LOCKED_REMAINING_URLS = {
+    "UK-01": "https://www.gov.uk/search/all.atom?organisations%5B%5D=home-office&organisations%5B%5D=uk-visas-and-immigration&order=updated-newest",
+    "UK-05": "https://www.gov.uk/search/all.atom?organisations%5B%5D=department-for-education&organisations%5B%5D=ofqual&order=updated-newest",
+    "UK-10": "https://www.metoffice.gov.uk/public/data/PWSCache/WarningsRSS/Region/UK",
+    "HK-04": "https://www.edb.gov.hk/tc/whats_new_rss.xml",
+    "RAD-01": "https://rthk9.rthk.hk/rthk/news/rss/c_expressnews_clocal.xml",
+    "RAD-02": "https://feeds.bbci.co.uk/news/uk/rss.xml",
+}
+
+SKIP_EVENT_TYPE = "discovery.signal.skipped"
+PARKED_JSON_SOURCE_IDS = ("HK-02", "UK-02", "UK-03")
+
+
+
+def test_remaining_rss_urls_and_identities_are_unique() -> None:
+    from newsroom.discovery_ingest import (
+        DEFAULT_SOURCE_ID,
+        IDEMPOTENCY_KEY,
+        RSS_SOURCE_IDS,
+        SIGNAL_AGGREGATE_ID,
+        SIGNAL_AGGREGATE_IDS,
+        signal_idempotency_key,
+    )
+
+    assert REMAINING_RSS_SOURCE_IDS == ("HK-04", "RAD-01", "RAD-02", "UK-01", "UK-05", "UK-10")
+    assert set(LOCKED_REMAINING_URLS) == set(REMAINING_RSS_SOURCE_IDS)
+    for source_id, url in LOCKED_REMAINING_URLS.items():
+        assert SOURCE_URLS[source_id] == url
+        assert_allowed_url(url)
+        assert source_id in RSS_SOURCE_IDS
+    for parked in PARKED_JSON_SOURCE_IDS:
+        assert parked not in RSS_SOURCE_IDS
+    assert SIGNAL_AGGREGATE_IDS[DEFAULT_SOURCE_ID] == SIGNAL_AGGREGATE_ID
+    assert signal_idempotency_key(DEFAULT_SOURCE_ID) == IDEMPOTENCY_KEY
+    source_ids = (DEFAULT_SOURCE_ID, *REMAINING_RSS_SOURCE_IDS)
+    aggregate_ids = [str(SIGNAL_AGGREGATE_IDS[source_id]) for source_id in source_ids]
+    keys = [signal_idempotency_key(source_id) for source_id in source_ids]
+    assert len(set(aggregate_ids)) == len(source_ids)
+    assert len(set(keys)) == len(source_ids)
+
+
+def _read_events(db: Path, event_type: str) -> list[tuple[str, str, dict[str, object]]]:
+    with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
+        rows = conn.execute(
+            "SELECT e.event_type, e.principal_id, p.payload_bytes "
+            "FROM ledger_events e "
+            "JOIN authority_payloads p ON p.payload_id=e.payload_id "
+            "WHERE e.event_type=?",
+            (event_type,),
+        ).fetchall()
+    events: list[tuple[str, str, dict[str, object]]] = []
+    for row_type, principal_id, payload_bytes in rows:
+        payload = json.loads(bytes(payload_bytes))
+        assert isinstance(payload, dict)
+        events.append((str(row_type), str(principal_id), payload))
+    return events
+
+
+def test_ingest_signal_accepts_source_id_and_records_that_source(tmp_path: Path) -> None:
+    home = tmp_path / "newsroom"
+    _install_uv_stub(tmp_path)
+    try:
+        start = _cli("start", home=home)
+        assert start.returncode == 0, start.stderr
+        granted = _cli("grant-envelope", home=home)
+        assert granted.returncode == 0, granted.stderr
+
+        ingested = _cli(
+            "ingest-signal",
+            "--source-id",
+            "HK-04",
+            home=home,
+            env=_rss_env(tmp_path),
+        )
+        assert ingested.returncode == 0, ingested.stderr
+        report = json.loads(ingested.stdout)
+        assert report["ok"] is True
+        assert report.get("skipped") is not True
+        assert report["source_id"] == "HK-04"
+        assert report["url"] == SOURCE_URLS["HK-04"]
+        assert report["event_type"] == EVENT_TYPE
+        assert_allowed_url(str(report["url"]))
+
+        signals = _read_signals(ledger_path(home))
+        assert len(signals) == 1
+        _event_type, principal_id, payload = signals[0]
+        assert _event_type == EVENT_TYPE
+        assert principal_id == OWNER_PRINCIPAL
+        assert payload["source_id"] == "HK-04"
+        assert payload["url"] == SOURCE_URLS["HK-04"]
+        assert payload["adapter"] == "official_source_definition_rss"
+        assert payload["auto_publish"] is False
+        assert payload["discord"] is False
+        assert payload["public_adapter"] is False
+        assert payload["item_id"]
+        raw = json.dumps(payload).lower()
+        assert all(marker not in raw for marker in RETIRED_MARKERS)
+
+        again = _cli(
+            "ingest-signal",
+            "--source-id",
+            "HK-04",
+            home=home,
+            env=_rss_env(tmp_path),
+        )
+        assert again.returncode == 0, again.stderr
+        assert len(_read_signals(ledger_path(home))) == 1
+    finally:
+        _stop(home)
+
+
+def test_ingest_signal_records_one_admitted_row_per_remaining_rss_source(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "newsroom"
+    _install_uv_stub(tmp_path)
+    try:
+        start = _cli("start", home=home)
+        assert start.returncode == 0, start.stderr
+        granted = _cli("grant-envelope", home=home)
+        assert granted.returncode == 0, granted.stderr
+
+        first = _cli("ingest-signal", home=home, env=_rss_env(tmp_path))
+        assert first.returncode == 0, first.stderr
+        assert json.loads(first.stdout)["source_id"] == "HK-01"
+
+        for source_id in REMAINING_RSS_SOURCE_IDS:
+            ingested = _cli(
+                "ingest-signal",
+                "--source-id",
+                source_id,
+                home=home,
+                env=_rss_env(tmp_path),
+            )
+            assert ingested.returncode == 0, ingested.stderr
+            report = json.loads(ingested.stdout)
+            assert report["ok"] is True
+            assert report.get("skipped") is not True
+            assert report["source_id"] == source_id
+            assert report["url"] == SOURCE_URLS[source_id]
+            assert report["event_type"] == EVENT_TYPE
+
+        signals = _read_signals(ledger_path(home))
+        source_ids = {payload["source_id"] for _event, _principal, payload in signals}
+        assert source_ids == {"HK-01", *REMAINING_RSS_SOURCE_IDS}
+        assert len(signals) == 7
+        for _event, principal_id, payload in signals:
+            assert principal_id == OWNER_PRINCIPAL
+            assert payload["adapter"] == "official_source_definition_rss"
+            assert payload["auto_publish"] is False
+            assert payload["discord"] is False
+            assert payload["public_adapter"] is False
+            assert payload["url"] == SOURCE_URLS[str(payload["source_id"])]
+            assert_allowed_url(str(payload["url"]))
+    finally:
+        _stop(home)
+
+
+def test_ingest_signal_records_skip_when_feed_fetch_fails(tmp_path: Path) -> None:
+    home = tmp_path / "newsroom"
+    _install_uv_stub(tmp_path)
+    try:
+        start = _cli("start", home=home)
+        assert start.returncode == 0, start.stderr
+        granted = _cli("grant-envelope", home=home)
+        assert granted.returncode == 0, granted.stderr
+
+        skipped = _cli(
+            "ingest-signal",
+            "--source-id",
+            "HK-04",
+            home=home,
+            env={"NEWSROOM_INGEST_HTTP_STATUS": "503"},
+        )
+        assert skipped.returncode == 0, skipped.stderr
+        report = json.loads(skipped.stdout)
+        assert report["ok"] is True
+        assert report["skipped"] is True
+        assert report["source_id"] == "HK-04"
+        assert report["url"] == SOURCE_URLS["HK-04"]
+        assert report["event_type"] == SKIP_EVENT_TYPE
+        assert "503" in str(report["reason"])
+        assert report["auto_publish"] is False
+        assert report["discord"] is False
+        assert report["public_adapter"] is False
+
+        assert _read_signals(ledger_path(home)) == []
+        skips = _read_events(ledger_path(home), SKIP_EVENT_TYPE)
+        assert len(skips) == 1
+        _event_type, principal_id, payload = skips[0]
+        assert _event_type == SKIP_EVENT_TYPE
+        assert principal_id == OWNER_PRINCIPAL
+        assert payload["source_id"] == "HK-04"
+        assert payload["url"] == SOURCE_URLS["HK-04"]
+        assert payload["adapter"] == "official_source_definition_rss"
+        assert payload["auto_publish"] is False
+        assert payload["discord"] is False
+        assert payload["public_adapter"] is False
+        assert "503" in str(payload["reason"])
+        assert "item_id" not in payload
+        raw = json.dumps(payload).lower()
+        assert all(marker not in raw for marker in RETIRED_MARKERS)
+
+        again = _cli(
+            "ingest-signal",
+            "--source-id",
+            "HK-04",
+            home=home,
+            env={"NEWSROOM_INGEST_HTTP_STATUS": "503"},
+        )
+        assert again.returncode == 0, again.stderr
+        assert len(_read_events(ledger_path(home), SKIP_EVENT_TYPE)) == 1
+        assert _read_signals(ledger_path(home)) == []
+    finally:
+        _stop(home)
+
+
+def test_ingest_signal_refuses_parked_json_and_unknown_source(tmp_path: Path) -> None:
+    home = tmp_path / "newsroom"
+    _install_uv_stub(tmp_path)
+    try:
+        start = _cli("start", home=home)
+        assert start.returncode == 0, start.stderr
+        granted = _cli("grant-envelope", home=home)
+        assert granted.returncode == 0, granted.stderr
+
+        for source_id in (*PARKED_JSON_SOURCE_IDS, "EXAMPLE-01"):
+            refused = _cli(
+                "ingest-signal",
+                "--source-id",
+                source_id,
+                home=home,
+                env=_rss_env(tmp_path),
+            )
+            assert refused.returncode != 0
+            report = json.loads(refused.stdout)
+            assert report["ok"] is False
+            assert "invent" not in json.dumps(report).lower()
+
+        assert _read_signals(ledger_path(home)) == []
+        assert _read_events(ledger_path(home), SKIP_EVENT_TYPE) == []
+    finally:
+        _stop(home)
+
+
+def test_ingest_signal_refuses_while_emergency_stop_is_paused(tmp_path: Path) -> None:
+    home = tmp_path / "newsroom"
+    pause = home / "logs" / PAUSE_RESTORE_NAME
+    _install_uv_stub(tmp_path)
+    try:
+        start = _cli("start", home=home)
+        assert start.returncode == 0, start.stderr
+        granted = _cli("grant-envelope", home=home)
+        assert granted.returncode == 0, granted.stderr
+        db = ledger_path(home)
+        assert _read_signals(db) == []
+
+        stopped = _cli("stop", "--pause-restore", home=home)
+        assert stopped.returncode == 0, stopped.stderr
+        assert pause.is_file()
+
+        refused = _cli(
+            "ingest-signal",
+            "--source-id",
+            "HK-04",
+            home=home,
+            env=_rss_env(tmp_path),
+        )
+        assert refused.returncode != 0
+        report = json.loads(refused.stdout)
+        assert report["ok"] is False
+        error = report["error"].lower()
+        assert "pause" in error or "emergency stop" in error
+        assert "resume" in error
+        assert _read_signals(db) == []
+        assert _read_events(db, SKIP_EVENT_TYPE) == []
+        assert pause.is_file()
+
+        auto = _cli("start", home=home)
+        assert auto.returncode != 0
+        health = json.loads(_cli("health", home=home).stdout)
+        assert health["process_up"] is False
+        assert health["pid"] is None
+        assert pause.is_file()
+
+        still = _cli(
+            "ingest-signal",
+            "--source-id",
+            "HK-04",
+            home=home,
+            env=_rss_env(tmp_path),
+        )
+        assert still.returncode != 0
+        still_report = json.loads(still.stdout)
+        assert still_report["ok"] is False
+        assert _read_signals(db) == []
+        assert _read_events(db, SKIP_EVENT_TYPE) == []
+
+        resumed = _cli("start", "--resume", home=home)
+        assert resumed.returncode == 0, resumed.stderr
+        assert not pause.is_file()
+
+        ingested = _cli(
+            "ingest-signal",
+            "--source-id",
+            "HK-04",
+            home=home,
+            env=_rss_env(tmp_path),
+        )
+        assert ingested.returncode == 0, ingested.stderr
+        signals = _read_signals(db)
+        assert len(signals) == 1
+        assert signals[0][2]["source_id"] == "HK-04"
+        assert signals[0][2]["url"] == SOURCE_URLS["HK-04"]
+        assert signals[0][2]["auto_publish"] is False
+        assert signals[0][2]["discord"] is False
+        assert signals[0][2]["public_adapter"] is False
+    finally:
+        _stop(home, pause_restore=True)
