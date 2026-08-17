@@ -1,4 +1,4 @@
-"""Grok Bot first-boot bring-up, grant, ingest, mint, dispatch, AUTO-010 commit, and emergency stop."""
+"""Grok Bot first-boot bring-up, grant, ingest, mint, dispatch, internal-beta publish, AUTO-010 commit, and emergency stop."""
 
 from __future__ import annotations
 
@@ -449,6 +449,61 @@ def dispatch_target(
 
 
 
+def dispatch_internal_beta(
+    home: Path,
+    *,
+    project_root: Path | None = None,
+) -> dict[str, Any]:
+    from newsroom.internal_beta_grant import EVENT_TYPE as GRANT_EVENT_TYPE
+    from newsroom.internal_beta_publish import (
+        DISPATCHER_ID,
+        EVENT_TYPE,
+        TARGET,
+        record_internal_beta_publish,
+    )
+
+    db = ledger_path(home)
+    if not _ledger_present(home):
+        raise FirstBootError(
+            "ledger missing; run newsroom-first-boot start first"
+        )
+    if restore_paused(home):
+        raise FirstBootError(
+            "emergency stop is paused; resume is required before internal beta publish"
+        )
+    paused = restore_paused(home)
+    was_up = process_is_up(home)
+    if was_up:
+        stop(home)
+    try:
+        _require_internal_beta_grant(db, GRANT_EVENT_TYPE)
+        recorded = record_internal_beta_publish(db)
+    except FirstBootError:
+        if was_up and not paused:
+            start(home, project_root=project_root)
+        raise
+    except Exception as exc:
+        if was_up and not paused:
+            start(home, project_root=project_root)
+        raise FirstBootError(f"internal beta publish dispatch failed: {exc}") from exc
+    if was_up and not paused:
+        start(home, project_root=project_root)
+    return {
+        "ok": True,
+        "auto_publish": False,
+        "bundle_digest": recorded["bundle_digest"],
+        "discord": False,
+        "dispatcher": DISPATCHER_ID,
+        "event_type": EVENT_TYPE,
+        "home": str(home),
+        "ledger_path": str(db),
+        "operation": recorded["operation"],
+        "public_adapter": False,
+        "target": TARGET,
+        "x_as_publisher": False,
+    }
+
+
 def auto_010_commit(
     home: Path,
     *,
@@ -512,7 +567,7 @@ def auto_010_commit(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="First-boot bring-up, grant, ingest, mint, dispatch, AUTO-010 commit, and emergency stop."
+        description="First-boot bring-up, grant, ingest, mint, dispatch, internal-beta publish, AUTO-010 commit, and emergency stop."
     )
     parser.add_argument(
         "command",
@@ -527,6 +582,7 @@ def main(argv: list[str] | None = None) -> int:
             "ingest-signal",
             "mint-decision",
             "dispatch-target",
+            "dispatch-internal-beta",
             "auto-010-commit",
         ),
     )
@@ -572,6 +628,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "dispatch-target":
             _print_json(dispatch_target(home, project_root=project_root))
+            return 0
+        if args.command == "dispatch-internal-beta":
+            _print_json(dispatch_internal_beta(home, project_root=project_root))
             return 0
         if args.command == "auto-010-commit":
             _print_json(auto_010_commit(home, project_root=project_root))
@@ -689,6 +748,23 @@ def _require_envelope_grant(path: Path, event_type: str) -> None:
             "envelope grant missing; run newsroom-first-boot grant-envelope first"
         )
 
+
+
+def _require_internal_beta_grant(path: Path, event_type: str) -> None:
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+    try:
+        count = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM ledger_events WHERE event_type=?",
+                (event_type,),
+            ).fetchone()[0]
+        )
+    finally:
+        conn.close()
+    if count < 1:
+        raise FirstBootError(
+            "internal_beta grant missing; run newsroom-first-boot grant-internal-beta first"
+        )
 
 
 def _require_auto_publish_grant(path: Path, event_type: str) -> None:
