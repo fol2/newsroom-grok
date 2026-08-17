@@ -1,4 +1,4 @@
-"""Shared host authority store: first-boot hold plus envelope grant."""
+"""Shared host authority store: first-boot hold, envelope grant, first ingest."""
 
 from __future__ import annotations
 
@@ -18,6 +18,10 @@ from newsroom.authority import (
     StaticPrincipal,
     TrustScope,
     open_authority_event_system,
+)
+from newsroom.discovery_ingest import (
+    signal_command_definition,
+    signal_payload_contract,
 )
 from newsroom.envelope_grant import (
     OWNER_CREDENTIAL,
@@ -76,15 +80,19 @@ def hold_command_definition(
 def open_host_store(path: Path) -> object:
     hold_contract = hold_payload_contract()
     envelope_contract = envelope_payload_contract()
+    signal_contract = signal_payload_contract()
     return open_authority_event_system(
         path=path,
         registry=CommandRegistry(
             [
                 hold_command_definition(hold_contract),
                 envelope_command_definition(envelope_contract),
+                signal_command_definition(signal_contract),
             ]
         ),
-        payload_schemas=PayloadSchemaRegistry((hold_contract, envelope_contract)),
+        payload_schemas=PayloadSchemaRegistry(
+            (hold_contract, envelope_contract, signal_contract)
+        ),
         authenticator=StaticAuthenticator(
             credentials={
                 "host-process": StaticPrincipal(
@@ -105,7 +113,11 @@ def open_host_store(path: Path) -> object:
                     {"authority.host.hold", "authority.host.read"}
                 ),
                 OWNER_PRINCIPAL: frozenset(
-                    {"authority.envelope.grant", "authority.host.read"}
+                    {
+                        "authority.envelope.grant",
+                        "authority.discovery.ingest",
+                        "authority.host.read",
+                    }
                 ),
             },
         ),
@@ -115,7 +127,7 @@ def open_host_store(path: Path) -> object:
             required_scope="authority.host.read",
             allowed_principal_ids=frozenset({"host.newsroom", OWNER_PRINCIPAL}),
             allowed_security_scopes=frozenset(
-                {"authority.host", "authority.envelope"}
+                {"authority.host", "authority.envelope", "authority.discovery"}
             ),
             allowed_trust_scopes=frozenset(
                 {TrustScope.OBSERVED, TrustScope.ADMITTED}
