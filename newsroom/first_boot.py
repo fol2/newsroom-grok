@@ -482,6 +482,65 @@ def mint_decision(
     }
 
 
+def mint_bundle_body(
+    home: Path,
+    *,
+    project_root: Path | None = None,
+) -> dict[str, Any]:
+    from newsroom.publication_bundle import (
+        BUNDLE_DIGEST,
+        EVENT_TYPE,
+        ITEM_URL,
+        SOURCE_ID,
+        load_authorised_hk01_binding,
+        load_official_story,
+        record_publication_bundle,
+    )
+
+    db = ledger_path(home)
+    if not _ledger_present(home):
+        raise FirstBootError(
+            "ledger missing; run newsroom-first-boot start first"
+        )
+    if restore_paused(home):
+        raise FirstBootError(
+            "emergency stop is paused; resume is required before bundle mint"
+        )
+    paused = restore_paused(home)
+    was_up = process_is_up(home)
+    if was_up:
+        stop(home)
+    try:
+        load_authorised_hk01_binding(db)
+        story = load_official_story()
+        recorded = record_publication_bundle(db, story=story)
+    except FirstBootError:
+        if was_up and not paused:
+            start(home, project_root=project_root)
+        raise
+    except Exception as exc:
+        if was_up and not paused:
+            start(home, project_root=project_root)
+        raise FirstBootError(f"publication bundle mint failed: {exc}") from exc
+    if was_up and not paused:
+        start(home, project_root=project_root)
+    return {
+        "ok": True,
+        "auto_publish": False,
+        "bundle_digest": BUNDLE_DIGEST,
+        "discord": False,
+        "event_type": EVENT_TYPE,
+        "home": str(home),
+        "item_url": ITEM_URL,
+        "ledger_path": str(db),
+        "public_adapter": False,
+        "source_id": SOURCE_ID,
+        "story_body": recorded["story_body"],
+        "story_title": recorded["story_title"],
+        "x_as_publisher": False,
+    }
+
+
 def dispatch_target(
     home: Path,
     *,
@@ -680,6 +739,7 @@ def main(argv: list[str] | None = None) -> int:
             "ingest-signal",
             "ingest-x-search",
             "mint-decision",
+            "mint-bundle-body",
             "dispatch-target",
             "dispatch-internal-beta",
             "auto-010-commit",
@@ -738,6 +798,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "mint-decision":
             _print_json(mint_decision(home, project_root=project_root))
+            return 0
+        if args.command == "mint-bundle-body":
+            _print_json(mint_bundle_body(home, project_root=project_root))
             return 0
         if args.command == "dispatch-target":
             _print_json(dispatch_target(home, project_root=project_root))
