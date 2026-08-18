@@ -71,6 +71,7 @@ from .types import (
     classify_entity_script,
     normalize_entity_text,
     require_normalized_entity_text,
+    resolve_mention_text,
 )
 
 __all__ = [
@@ -140,4 +141,5 @@ __all__ = [
     "classify_entity_script",
     "normalize_entity_text",
     "require_normalized_entity_text",
+    "resolve_mention_text",
 ]

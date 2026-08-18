@@ -274,6 +274,83 @@ newsroom/tests/test_projection_b1_entity.py
 
 A2a proves exact authenticated command and ledger-event envelopes for mention admission, resolution proposal and resolution decision. A2b proves governed-object revocation blocks all current entity, alias and preferred-identity reads while immutable history remains retained. Projection B1 proves proposed identity emits no event and one explicit accepted decision emits one admitted, typed projection event. Actual Neo4j entity projection remains deliberately deferred to Increment 4E.
 
+## First-boot live-official ACCEPT (Increment 4B operator path)
+
+The fixture lane remains the bilingual Increment 4A Proposal Envelopes used by `newsroom/tests/entity_4b_helpers.py`. That lane must not run against live first-boot extracts.
+
+A separate live-official operator reads the six retained `extraction_runs` / `extraction_outputs` already written by `extract-leads` and records Entity Mentions, resolution proposals, aliases and immutable editorial ACCEPT decisions. A Canonical Entity is created only by an explicit ACCEPT row. The operator binds Source Revision, Discovery Representation and the same admitted representation passages the 4A runs already used. JSON identity is not a passage; mention evidence is the exact 4A byte range inside that passage.
+
+It does not remint `publication.bundle.with_body`, rewrite ledger events 2/3/4/7/15, rerun `extract-leads`, invent RAD-02 / UK-10 rows, admit 4C relations, write Neo4j, enable Graphiti, `AUTO_PUBLISH`, `public_adapter`, Discord, or X-as-publisher. Name equality, transliteration and extractor placeholders never allocate identity.
+
+`REAL_GRAPHITI_RUNTIME_ENABLED` stays `False`. Predicate registration and relation ACCEPT remain Increment 4C / #84.
+
+The operator first applies checked schema **v34** (`live_official_entity_mention_authority_v34`) if the host is still on v33. That migration is trigger-only: it DROP/CREATE `entity_mention_lineage_guard` so a live-official JSON value span (`json.dumps(placeholder)`, including quotes) can be stored as `mention_text` while still matching the exact evidence byte range CHECK. Fixture mentions that copy the placeholder into the evidence span remain valid. It does not rewrite `extraction_runs`, `extraction_outputs`, `news_leads`, or ledger events 2/3/4/7/15. A backup-gated file is written next to the ledger:
+
+```text
+/home/box/newsroom/data/authority.sqlite3.pre-v34.sqlite3
+```
+
+Do not remint seq 15. Do not rerun `extract-leads`.
+
+After merge, Daniel runs this on the first-boot host (`fol2/newsroom-grok`, home `/home/box/newsroom`) that already has the six extracts. Do not invent those rows. Hold is up; this command stops the host if it is up, writes 4B authority, then restarts if it was up. RAD-02 / UK-10 stay out.
+
+The six extracts already bind these revision/representation pairs:
+
+```text
+HK-01        rev=275f12de-193f-49b4-8c3c-93c41964d363  rep=709c3f45-57b8-4945-8114-0dd46cdafdf7
+HK-04        rev=f96c14c7-0d4a-4e41-8d55-a6c8b77df0b8  rep=ec15beac-6a33-497b-b167-342390720c56
+UK-01        rev=f7bfc7de-ad38-4409-83fb-70d0c5fc8e7c  rep=3a73f1c8-babf-420c-98d4-fef8b8235af1
+UK-05        rev=a82909ec-fdd3-4082-aef1-cd4ae783d27d  rep=65a55030-cdf4-46ae-88fb-9a04b1519503
+RAD-01       rev=2a4f86a7-866a-47ce-bd01-1aff75ffc2ff  rep=6e1dfac0-07d9-403d-b386-08ca0ff2e00a
+X-SEARCH-POSTS rev=d7e2e286-a0a2-4c22-8b50-e53f85e541eb  rep=ef939597-2789-4146-bdbb-e73630be64c4
+```
+
+```text
+uv run python3 scripts/newsroom_first_boot.py resolve-leads --home /home/box/newsroom
+```
+
+Equivalent console script:
+
+```text
+newsroom-first-boot resolve-leads --home /home/box/newsroom
+```
+
+Expected host result after a successful run:
+
+```text
+ok: true
+schema_version: 34
+extraction_runs: 6
+extraction_outputs: 6
+entity_mentions: 12
+canonical_entities: 12
+entity_resolution_decisions: 12 ACCEPT
+resolved source_ids: HK-01, HK-04, UK-01, UK-05, RAD-01, X-SEARCH-POSTS
+RAD-02 / UK-10: not resolved
+editorial_relation_decisions: 0
+graphiti / auto_publish / discord / public_adapter / x_as_publisher: false
+seq 15 / publication.bundle.with_body.minted: unchanged
+PRAGMA user_version = 34
+authority.sqlite3.pre-v34.sqlite3 present beside the ledger
+```
+
+How to tell 4B landed for the six:
+
+```text
+PRAGMA user_version = 34
+entity_mentions JOIN extraction_runs JOIN news_leads
+  on revision_id + representation_id + passage_id
+  = 12 rows, those six pairs only
+mention_text bytes = exact 4A evidence span (JSON value including quotes)
+canonical_entities.created_by_kind = RESOLUTION
+canonical_entities.created_by_decision_id = entity_resolution_decisions.decision_id
+entity_resolution_decisions.action = ACCEPT
+no extractor placeholder equals a Canonical Entity id
+editorial_relation_decisions = 0
+```
+
+A second run is idempotent: accepted mentions are skipped with `already-resolved`.
+
 ## Stop boundary
 
 Issue #227 / Increment 4C must not begin until #226 is merged to `main` and closed with exact evidence. Completion of 4B does not authorise real Graphiti, model or embedding execution, relation admission, Graphiti proposal-workspace integration, actual-Neo4j bilingual proof, publication or production effects.

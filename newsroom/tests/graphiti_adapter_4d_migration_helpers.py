@@ -257,6 +257,7 @@ def _drop_empty_v32_recovery_schema(connection: sqlite3.Connection) -> None:
 
 
 def _drop_empty_v33_live_official_extraction_schema(connection: sqlite3.Connection) -> None:
+    _drop_empty_v34_live_official_entity_mention_schema(connection)
     if int(connection.execute("PRAGMA user_version").fetchone()[0]) != 33:
         return
     from newsroom.authority.extraction_migrations import (
@@ -300,6 +301,45 @@ def _drop_empty_v33_live_official_extraction_schema(connection: sqlite3.Connecti
     connection.execute("DELETE FROM authority_migrations WHERE version=33")
     connection.execute(guard)
     connection.execute("PRAGMA user_version=32")
+
+
+def _drop_empty_v34_live_official_entity_mention_schema(
+    connection: sqlite3.Connection,
+) -> None:
+    if int(connection.execute("PRAGMA user_version").fetchone()[0]) != 34:
+        return
+    from newsroom.authority.entity_migrations import (
+        ENTITY_AUTHORITY_MIGRATION_STATEMENTS,
+    )
+    from newsroom.authority.live_official_entity_mention_migrations import (
+        LIVE_OFFICIAL_ENTITY_MENTION_MIGRATION_CHECKSUM,
+        LIVE_OFFICIAL_ENTITY_MENTION_MIGRATION_NAME,
+    )
+
+    if connection.execute(
+        "SELECT name,checksum FROM authority_migrations WHERE version=34"
+    ).fetchone() != (
+        LIVE_OFFICIAL_ENTITY_MENTION_MIGRATION_NAME,
+        LIVE_OFFICIAL_ENTITY_MENTION_MIGRATION_CHECKSUM,
+    ):
+        raise sqlite3.DatabaseError(
+            "downgrade requires exact empty v34 live-official entity-mention schema"
+        )
+    original_guard = next(
+        statement
+        for statement in ENTITY_AUTHORITY_MIGRATION_STATEMENTS
+        if "CREATE TRIGGER entity_mention_lineage_guard" in statement
+    )
+    connection.execute("DROP TRIGGER entity_mention_lineage_guard")
+    connection.execute(original_guard)
+    guard = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type='trigger' "
+        "AND name='immutable_authority_migrations_delete'"
+    ).fetchone()[0]
+    connection.execute("DROP TRIGGER immutable_authority_migrations_delete")
+    connection.execute("DELETE FROM authority_migrations WHERE version=34")
+    connection.execute(guard)
+    connection.execute("PRAGMA user_version=33")
 
 
 def drop_empty_v28_coverage_schema(connection: sqlite3.Connection) -> None:

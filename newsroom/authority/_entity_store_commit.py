@@ -27,6 +27,7 @@ from newsroom.entities.policy import (
 )
 from newsroom.entities.types import (
     CanonicalEntityLifecycle,
+    EntityContractError,
     EntityDecisionConflict,
     EntityCreationDecisionKind,
     EntityIdentifierReuse,
@@ -38,6 +39,7 @@ from newsroom.entities.types import (
     EntityStateError,
     classify_entity_script,
     normalize_entity_text,
+    resolve_mention_text,
 )
 from newsroom.extraction.types import ExtractionProposalKind
 from newsroom.sources.types import (
@@ -102,15 +104,15 @@ class _EntityCommitMixin:
             ).fetchone()
             if passage is None:
                 raise AuthorityPersistenceError("mention evidence passage is missing")
-            mention_text = source.subject_placeholder
-            text_bytes = mention_text.encode("utf-8")
-            if (
-                len(text_bytes) != evidence.end_byte - evidence.start_byte
-                or digest_bytes(text_bytes) != evidence.evidence_text_digest
-            ):
-                raise AuthorityPersistenceError(
-                    "mention placeholder differs from exact extraction evidence"
+            try:
+                mention_text = resolve_mention_text(
+                    source.subject_placeholder,
+                    start_byte=evidence.start_byte,
+                    end_byte=evidence.end_byte,
+                    evidence_text_digest=evidence.evidence_text_digest,
                 )
+            except EntityContractError as exc:
+                raise AuthorityPersistenceError(str(exc)) from exc
             if request.normalized_text != normalize_entity_text(mention_text):
                 raise EntityStateError("mention normalized text differs from exact text")
             if request.script is not classify_entity_script(mention_text):
