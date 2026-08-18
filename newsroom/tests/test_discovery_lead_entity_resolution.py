@@ -86,7 +86,7 @@ def test_canonical_entities_come_from_accept_not_extractor_names(tmp_path: Path)
     assert extracted["extraction_runs"] == 6
     result = record_first_boot_entity_resolution(db, clock=lambda: NOW)
     assert result["ok"] is True
-    assert result["schema_version"] == 34
+    assert result["schema_version"] == 35
     assert result["canonical_entities"] == 12
     assert result["entity_mentions"] == 12
     assert result["entity_resolution_decisions"] == 12
@@ -211,7 +211,7 @@ def test_resolve_six_allowlisted_extracts_skips_rad02_and_excludes_4c_neo4j(
     result = record_first_boot_entity_resolution(db, clock=lambda: NOW)
     assert REAL_GRAPHITI_RUNTIME_ENABLED is False
     assert result["ok"] is True
-    assert result["schema_version"] == 34
+    assert result["schema_version"] == 35
     assert result["graphiti"] is False
     assert result["graphiti_runtime_enabled"] is False
     assert result["auto_publish"] is False
@@ -326,7 +326,7 @@ def test_cli_resolve_leads_after_extract(tmp_path: Path) -> None:
         assert resolved.returncode == 0, resolved.stderr + resolved.stdout
         payload = json.loads(resolved.stdout)
         assert payload["ok"] is True
-        assert payload["schema_version"] == 34
+        assert payload["schema_version"] == 35
         assert payload["resolved"][0]["source_id"] == "HK-01"
         assert payload["extraction_runs"] == 1
         assert payload["entity_mentions"] == 2

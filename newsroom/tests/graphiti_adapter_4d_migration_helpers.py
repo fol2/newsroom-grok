@@ -303,9 +303,65 @@ def _drop_empty_v33_live_official_extraction_schema(connection: sqlite3.Connecti
     connection.execute("PRAGMA user_version=32")
 
 
+def _drop_empty_v35_live_official_evidence_package_schema(
+    connection: sqlite3.Connection,
+) -> None:
+    if int(connection.execute("PRAGMA user_version").fetchone()[0]) != 35:
+        return
+    from newsroom.authority.live_official_evidence_package_migrations import (
+        LIVE_OFFICIAL_EVIDENCE_PACKAGE_MIGRATION_CHECKSUM,
+        LIVE_OFFICIAL_EVIDENCE_PACKAGE_MIGRATION_NAME,
+        LIVE_OFFICIAL_EVIDENCE_PACKAGE_MIGRATION_STATEMENTS,
+    )
+
+    def normalise(value: str) -> str:
+        return " ".join(value.split()).replace(" IF NOT EXISTS", "")
+
+    tables = (
+        "evidence_packages",
+        "evidence_package_receipts",
+        "evidence_package_heads",
+    )
+    placeholders = ",".join("?" for _ in tables)
+    objects = connection.execute(
+        f"SELECT type,name,sql FROM sqlite_master WHERE tbl_name IN ({placeholders}) "
+        "AND type IN ('table','trigger','index') AND sql IS NOT NULL",
+        tables,
+    ).fetchall()
+    if connection.execute(
+        "SELECT name,checksum FROM authority_migrations WHERE version=35"
+    ).fetchone() != (
+        LIVE_OFFICIAL_EVIDENCE_PACKAGE_MIGRATION_NAME,
+        LIVE_OFFICIAL_EVIDENCE_PACKAGE_MIGRATION_CHECKSUM,
+    ) or {normalise(str(row[2])) for row in objects} != {
+        normalise(statement)
+        for statement in LIVE_OFFICIAL_EVIDENCE_PACKAGE_MIGRATION_STATEMENTS
+    }:
+        raise sqlite3.DatabaseError(
+            "downgrade requires exact empty v35 Evidence Package schema"
+        )
+    for table in tables:
+        if connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone() != (0,):
+            raise sqlite3.DatabaseError("v35 Evidence Package tables must be empty")
+    guard = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type='trigger' "
+        "AND name='immutable_authority_migrations_delete'"
+    ).fetchone()[0]
+    connection.execute("DROP TRIGGER immutable_authority_migrations_delete")
+    for object_type, name, _ in objects:
+        if object_type == "trigger":
+            connection.execute(f'DROP TRIGGER "{name}"')
+    for table in reversed(tables):
+        connection.execute(f'DROP TABLE "{table}"')
+    connection.execute("DELETE FROM authority_migrations WHERE version=35")
+    connection.execute(guard)
+    connection.execute("PRAGMA user_version=34")
+
+
 def _drop_empty_v34_live_official_entity_mention_schema(
     connection: sqlite3.Connection,
 ) -> None:
+    _drop_empty_v35_live_official_evidence_package_schema(connection)
     if int(connection.execute("PRAGMA user_version").fetchone()[0]) != 34:
         return
     from newsroom.authority.entity_migrations import (
