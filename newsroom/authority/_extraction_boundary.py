@@ -22,7 +22,12 @@ from newsroom.extraction.models import (
     ProducedExtraction,
 )
 from newsroom.extraction.fixtures import fixture_case_for_contract
-from newsroom.extraction.output_schema import normalize_fixture_production
+from newsroom.extraction.live_official import require_live_official_contract
+from newsroom.extraction.live_official_producer import ExtractionProducerDispatcher
+from newsroom.extraction.output_schema import (
+    normalize_fixture_production,
+    normalize_live_official_production,
+)
 from newsroom.extraction.policy import (
     EXTRACTION_RUN_EXECUTE_COMMAND,
     EXTRACTOR_CONTRACT_REGISTER_COMMAND,
@@ -30,6 +35,7 @@ from newsroom.extraction.policy import (
 from newsroom.extraction.producer import DeterministicFixtureExtractor
 from newsroom.extraction.types import (
     ExtractionContractError,
+    ExtractionExecutionProfile,
     ExtractionFailureCode,
     ExtractionOutcome,
     ExtractionOutputId,
@@ -64,7 +70,10 @@ class _ExtractionBoundary:
         producer: ProposalProducer,
         clock: Callable[[], UtcTimestamp],
     ) -> None:
-        if type(producer) is not DeterministicFixtureExtractor:
+        if type(producer) not in (
+            DeterministicFixtureExtractor,
+            ExtractionProducerDispatcher,
+        ):
             raise TypeError(
                 "Increment 4A accepts only the repository-owned deterministic producer"
             )
@@ -150,10 +159,13 @@ class _ExtractionBoundary:
         )
         started_at = self._clock()
         try:
-            # Contract compatibility is checked before any producer code sees
-            # the rights-permitted passage bytes. An incompatible attempt is
-            # still retained honestly as a blocking Run Version.
-            fixture_case_for_contract(contract.request)
+            if (
+                contract.request.execution_profile
+                is ExtractionExecutionProfile.LIVE_OFFICIAL
+            ):
+                require_live_official_contract(contract.request)
+            else:
+                fixture_case_for_contract(contract.request)
         except ExtractionContractError:
             production = self._failed_production(
                 request,
@@ -188,11 +200,21 @@ class _ExtractionBoundary:
                     )
                 else:
                     try:
-                        production = normalize_fixture_production(
-                            contract=contract.request,
-                            request=request,
-                            production=produced,
-                        )
+                        if (
+                            contract.request.execution_profile
+                            is ExtractionExecutionProfile.LIVE_OFFICIAL
+                        ):
+                            production = normalize_live_official_production(
+                                contract=contract.request,
+                                request=request,
+                                production=produced,
+                            )
+                        else:
+                            production = normalize_fixture_production(
+                                contract=contract.request,
+                                request=request,
+                                production=produced,
+                            )
                     except ExtractionContractError:
                         production = self._failed_production(
                             request,

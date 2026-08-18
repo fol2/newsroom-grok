@@ -555,6 +555,7 @@ def test_fixture_policy_binds_exact_admitted_utf8_bytes() -> None:
 def test_execution_profile_is_closed_to_fixture_replay_only() -> None:
     assert tuple(ExtractionExecutionProfile) == (
         ExtractionExecutionProfile.FIXTURE_REPLAY_ONLY,
+        ExtractionExecutionProfile.LIVE_OFFICIAL,
     )
     assert tuple(FixtureExtractionCase) == (
         FixtureExtractionCase.BILINGUAL_COMPLETE,

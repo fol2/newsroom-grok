@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
+from newsroom.extraction.live_official_producer import ExtractionProducerDispatcher
 from newsroom.extraction.policy import merge_extraction_authority_registries
-from newsroom.extraction.producer import DeterministicFixtureExtractor
 from newsroom.extraction.types import ExtractionReadPolicy
 
 from ._capability import _CapabilityIssuer
@@ -89,7 +89,7 @@ def open_governed_extraction_authority_system(
             authenticator=authenticator,
             authorizer=authorizer,
             read_policy=read_policy,
-            producer=DeterministicFixtureExtractor(),
+            producer=ExtractionProducerDispatcher(),
             clock=clock,
         )
         closed = False
