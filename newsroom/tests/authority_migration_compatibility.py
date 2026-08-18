@@ -223,6 +223,11 @@ PINNED_MIGRATION_HISTORY: tuple[HistoryRow, ...] = (
         "live_official_evidence_package_authority_v35",
         "sha256:7ad509f00db8fd86f53d97dce7986014488971d23810174d10cb81be63bef238",
     ),
+    (
+        36,
+        "live_official_original_write_authority_v36",
+        "sha256:0b1cf50f7b75ce7e6d67ee2b0eb4598f279762d33db107fe86e278ac164d1602",
+    ),
 )
 
 

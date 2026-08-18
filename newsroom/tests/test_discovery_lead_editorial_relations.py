@@ -53,7 +53,7 @@ def test_relations_bind_current_4b_canonical_entity_versions_not_extractor_names
     assert resolved["canonical_entities"] == 12
     result = record_first_boot_editorial_relations(db, clock=lambda: NOW)
     assert result["ok"] is True
-    assert result["schema_version"] == 35
+    assert result["schema_version"] == 36
     assert result["editorial_relation_decisions"] == 6
     assert result["editorial_relation_assertions"] == 6
     assert result["canonical_entities"] == 12
@@ -233,7 +233,7 @@ def test_relate_six_allowlisted_extracts_skips_rad02_and_excludes_neo4j(
     result = record_first_boot_editorial_relations(db, clock=lambda: NOW)
     assert REAL_GRAPHITI_RUNTIME_ENABLED is False
     assert result["ok"] is True
-    assert result["schema_version"] == 35
+    assert result["schema_version"] == 36
     assert result["graphiti"] is False
     assert result["neo4j"] is False
     assert result["graphiti_runtime_enabled"] is False
@@ -373,7 +373,7 @@ def test_cli_relate_leads_after_resolve(tmp_path: Path) -> None:
         assert related.returncode == 0, related.stderr + related.stdout
         payload = json.loads(related.stdout)
         assert payload["ok"] is True
-        assert payload["schema_version"] == 35
+        assert payload["schema_version"] == 36
         assert payload["related"][0]["source_id"] == "HK-01"
         assert payload["related"][0]["action"] == "ACCEPT"
         assert payload["related"][0]["predicate"] == "SAME_PROCESS_AS"
