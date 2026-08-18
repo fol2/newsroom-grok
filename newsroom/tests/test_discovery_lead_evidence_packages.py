@@ -12,8 +12,11 @@ from newsroom.discovery_lead_entity_resolution import (
     record_first_boot_entity_resolution,
 )
 from newsroom.discovery_lead_extraction import record_first_boot_extraction
+from newsroom.discovery_lead_evidence_packages import (
+    EVIDENCE_SOURCE_IDS,
+    record_first_boot_evidence_packages,
+)
 from newsroom.discovery_lead_story_candidates import (
-    TRIAGE_SOURCE_IDS,
     record_first_boot_story_candidates,
 )
 from newsroom.first_boot import ledger_path
@@ -41,42 +44,47 @@ from newsroom.tests.test_discovery_lead_admission import (
 )
 
 
-def _relate(db: Path) -> dict[str, object]:
+def _triage(db: Path) -> dict[str, object]:
     _seed_live_admissions(db)
     _admit(db)
     record_first_boot_extraction(db, clock=lambda: NOW)
     record_first_boot_entity_resolution(db, clock=lambda: NOW)
-    return record_first_boot_editorial_relations(db, clock=lambda: NOW)
+    record_first_boot_editorial_relations(db, clock=lambda: NOW)
+    return record_first_boot_story_candidates(db, clock=lambda: NOW)
 
 
-def test_candidates_bind_revision_representation_and_admitted_passages(
+def test_packages_bind_revision_representation_passages_and_candidate(
     tmp_path: Path,
 ) -> None:
     db = _db(tmp_path)
-    _relate(db)
-    result = record_first_boot_story_candidates(db, clock=lambda: NOW)
+    _triage(db)
+    result = record_first_boot_evidence_packages(db, clock=lambda: NOW)
     assert result["ok"] is True
+    assert result["evidence_packages"] == 6
+    assert result["evidence_package_heads"] == 6
+    assert result["evidence_package_receipts"] == 6
     assert result["story_candidates"] == 6
-    assert result["story_candidate_heads"] == 6
-    assert result["story_candidate_admission_receipts_v2"] == 6
     assert result["story_candidate_versions"] == 0
-    assert result["triage_work_items"] == 6
-    assert result["triage_work_item_versions"] == 6
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
         rows = conn.execute(
             """
-            SELECT json_extract(CAST(h.candidate_bytes AS TEXT), '$.revision_id'),
-                   json_extract(CAST(h.candidate_bytes AS TEXT), '$.representation_id'),
-                   json_extract(CAST(h.candidate_bytes AS TEXT), '$.item_id'),
-                   json_extract(CAST(h.candidate_bytes AS TEXT), '$.passage_id'),
-                   json_extract(CAST(h.candidate_bytes AS TEXT), '$.lead_id'),
-                   json_extract(CAST(h.candidate_bytes AS TEXT), '$.run_id'),
+            SELECT json_extract(CAST(p.package_bytes AS TEXT), '$.revision_id'),
+                   json_extract(CAST(p.package_bytes AS TEXT), '$.representation_id'),
+                   json_extract(CAST(p.package_bytes AS TEXT), '$.item_id'),
+                   json_extract(CAST(p.package_bytes AS TEXT), '$.passage_id'),
+                   json_extract(CAST(p.package_bytes AS TEXT), '$.lead_id'),
+                   json_extract(CAST(p.package_bytes AS TEXT), '$.candidate_id'),
+                   json_extract(CAST(p.package_bytes AS TEXT), '$.run_id'),
                    nl.revision_id, nl.representation_id, nl.item_id, nl.lead_id,
-                   rp.passage_id, er.run_id
-            FROM story_candidate_heads AS h
+                   rp.passage_id, er.run_id, h.candidate_id
+            FROM evidence_package_heads AS p
             JOIN news_leads AS nl
-              ON nl.lead_id = json_extract(CAST(h.candidate_bytes AS TEXT), '$.lead_id')
+              ON nl.lead_id = json_extract(CAST(p.package_bytes AS TEXT), '$.lead_id')
+            JOIN story_candidate_heads AS h
+              ON h.candidate_id = json_extract(
+                   CAST(p.package_bytes AS TEXT), '$.candidate_id'
+                 )
             JOIN extraction_runs AS er
               ON er.revision_id = nl.revision_id
              AND er.representation_id = nl.representation_id
@@ -85,39 +93,42 @@ def test_candidates_bind_revision_representation_and_admitted_passages(
         ).fetchall()
         assert len(rows) == 6
         for (
-            cand_rev,
-            cand_rep,
-            cand_item,
-            cand_passage,
-            cand_lead,
-            cand_run,
+            pkg_rev,
+            pkg_rep,
+            pkg_item,
+            pkg_passage,
+            pkg_lead,
+            pkg_candidate,
+            pkg_run,
             lead_rev,
             lead_rep,
             lead_item,
             lead_id,
             run_passage,
             run_id,
+            candidate_id,
         ) in rows:
-            assert cand_rev == lead_rev
-            assert cand_rep == lead_rep
-            assert cand_item == lead_item
-            assert cand_lead == lead_id
-            assert cand_passage == run_passage
-            assert cand_run == run_id
-            assert cand_rev != lead_item
-            assert cand_rep != lead_item
-            assert cand_passage != lead_item
+            assert pkg_rev == lead_rev
+            assert pkg_rep == lead_rep
+            assert pkg_item == lead_item
+            assert pkg_lead == lead_id
+            assert pkg_passage == run_passage
+            assert pkg_run == run_id
+            assert pkg_candidate == candidate_id
+            assert pkg_rev != lead_item
+            assert pkg_rep != lead_item
+            assert pkg_passage != lead_item
         json_as_passage = conn.execute(
             """
             SELECT COUNT(*)
-            FROM story_candidate_heads h
+            FROM evidence_package_heads p
             JOIN entity_mentions m
               ON m.passage_id = json_extract(
-                   CAST(h.candidate_bytes AS TEXT), '$.passage_id'
+                   CAST(p.package_bytes AS TEXT), '$.passage_id'
                  )
-            WHERE json_extract(CAST(h.candidate_bytes AS TEXT), '$.passage_id')
+            WHERE json_extract(CAST(p.package_bytes AS TEXT), '$.passage_id')
                   = m.mention_text
-               OR json_extract(CAST(h.candidate_bytes AS TEXT), '$.passage_id')
+               OR json_extract(CAST(p.package_bytes AS TEXT), '$.passage_id')
                   = m.normalized_text
             """
         ).fetchone()
@@ -127,28 +138,44 @@ def test_candidates_bind_revision_representation_and_admitted_passages(
         conn.close()
 
 
-def test_candidates_bind_4b_entities_and_4c_accept_relations(tmp_path: Path) -> None:
+def test_packages_bind_4b_entities_4c_accept_and_story_candidate(
+    tmp_path: Path,
+) -> None:
     db = _db(tmp_path)
-    _relate(db)
-    result = record_first_boot_story_candidates(db, clock=lambda: NOW)
+    _triage(db)
+    result = record_first_boot_evidence_packages(db, clock=lambda: NOW)
     assert result["canonical_entities"] == 12
     assert result["editorial_relation_assertions"] == 6
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
         rows = conn.execute(
             """
-            SELECT json_extract(CAST(h.candidate_bytes AS TEXT), '$.lead_id'),
-                   json_extract(CAST(h.candidate_bytes AS TEXT), '$.relation_assertion_id'),
-                   json_extract(CAST(h.candidate_bytes AS TEXT), '$.canonical_entity_ids'),
-                   json_extract(CAST(h.candidate_bytes AS TEXT), '$.authorises_publication'),
-                   json_extract(CAST(h.candidate_bytes AS TEXT), '$.authorises_evidence')
-            FROM story_candidate_heads AS h
+            SELECT json_extract(CAST(p.package_bytes AS TEXT), '$.lead_id'),
+                   json_extract(CAST(p.package_bytes AS TEXT), '$.candidate_id'),
+                   json_extract(CAST(p.package_bytes AS TEXT), '$.relation_assertion_id'),
+                   json_extract(CAST(p.package_bytes AS TEXT), '$.canonical_entity_ids'),
+                   json_extract(CAST(p.package_bytes AS TEXT), '$.authorises_publication'),
+                   json_extract(CAST(p.package_bytes AS TEXT), '$.authorises_evidence'),
+                   json_extract(CAST(p.package_bytes AS TEXT), '$.invented_evidence'),
+                   json_extract(CAST(p.package_bytes AS TEXT), '$.publication_decision')
+            FROM evidence_package_heads AS p
             """
         ).fetchall()
         assert len(rows) == 6
-        for _lead_id, assertion_id, entity_ids, publication, evidence in rows:
+        for (
+            lead_id,
+            candidate_id,
+            assertion_id,
+            entity_ids,
+            publication,
+            evidence,
+            invented,
+            decision,
+        ) in rows:
             assert publication in {0, False}
             assert evidence in {0, False}
+            assert invented in {0, False}
+            assert decision in {0, False}
             entities = json.loads(entity_ids)
             assert len(entities) == 2
             accepted = conn.execute(
@@ -171,16 +198,34 @@ def test_candidates_bind_4b_entities_and_4c_accept_relations(tmp_path: Path) -> 
             ).fetchone()
             assert current is not None
             assert int(current[0]) == 2
+            candidate = conn.execute(
+                """
+                SELECT COUNT(*) FROM story_candidates WHERE candidate_id=?
+                """,
+                (candidate_id,),
+            ).fetchone()
+            assert candidate is not None
+            assert int(candidate[0]) == 1
+            bound = conn.execute(
+                """
+                SELECT json_extract(CAST(h.candidate_bytes AS TEXT), '$.lead_id')
+                FROM story_candidate_heads AS h
+                WHERE h.candidate_id=?
+                """,
+                (candidate_id,),
+            ).fetchone()
+            assert bound is not None
+            assert bound[0] == lead_id
     finally:
         conn.close()
 
 
-def test_triage_six_allowlisted_leads_skips_rad02_and_excludes_neo4j(
+def test_package_six_allowlisted_candidates_skips_rad02_and_excludes_neo4j(
     tmp_path: Path,
 ) -> None:
     db = _db(tmp_path)
-    _relate(db)
-    result = record_first_boot_story_candidates(db, clock=lambda: NOW)
+    _triage(db)
+    result = record_first_boot_evidence_packages(db, clock=lambda: NOW)
     assert REAL_GRAPHITI_RUNTIME_ENABLED is False
     assert result["ok"] is True
     assert result["schema_version"] == 35
@@ -193,15 +238,16 @@ def test_triage_six_allowlisted_leads_skips_rad02_and_excludes_neo4j(
     assert result["x_as_publisher"] is False
     assert result["event_hypotheses_v2"] == 0
     assert result["evaluation_handoffs"] == 0
+    assert result["evidence_packages"] == 6
+    assert result["evidence_package_heads"] == 6
+    assert result["evidence_package_receipts"] == 6
     assert result["story_candidates"] == 6
-    assert result["story_candidate_heads"] == 6
-    assert result["story_candidate_admission_receipts_v2"] == 6
     assert result["story_candidate_versions"] == 0
-    assert result["triage_work_items"] == 6
-    assert result["triage_work_item_versions"] == 6
-    assert {item["source_id"] for item in result["admitted"]} == set(TRIAGE_SOURCE_IDS)
+    assert {item["source_id"] for item in result["admitted"]} == set(EVIDENCE_SOURCE_IDS)
     assert all(item["authorises_publication"] is False for item in result["admitted"])
     assert all(item["authorises_evidence"] is False for item in result["admitted"])
+    assert all(item["invented_evidence"] is False for item in result["admitted"])
+    assert all(item["publication_decision"] is False for item in result["admitted"])
     assert all(item["revision_id"] != item["item_id"] for item in result["admitted"])
     assert all(item["passage_id"] != item["item_id"] for item in result["admitted"])
     assert {item["source_id"] for item in result["skipped"]} == set()
@@ -209,6 +255,7 @@ def test_triage_six_allowlisted_leads_skips_rad02_and_excludes_neo4j(
     assert _table_count(db, "extraction_runs") == 6
     assert _table_count(db, "canonical_entities") == 12
     assert _table_count(db, "editorial_relation_assertions") == 6
+    assert _table_count(db, "story_candidates") == 6
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
         graphiti_rows = conn.execute(
@@ -226,14 +273,14 @@ def test_triage_six_allowlisted_leads_skips_rad02_and_excludes_neo4j(
         assert int(neo4j_tables[0]) == 0
         projector = Path(__file__).resolve().parents[1] / "neo4j_host_projection.py"
         before = projector.read_bytes()
-        record_first_boot_story_candidates(db, clock=lambda: NOW)
+        record_first_boot_evidence_packages(db, clock=lambda: NOW)
         assert projector.read_bytes() == before
     finally:
         conn.close()
 
 
-def test_triage_module_does_not_import_neo4j_graphiti_or_publishers() -> None:
-    source = Path(__file__).resolve().parents[1] / "discovery_lead_story_candidates.py"
+def test_evidence_module_does_not_import_neo4j_graphiti_or_publishers() -> None:
+    source = Path(__file__).resolve().parents[1] / "discovery_lead_evidence_packages.py"
     tree = ast.parse(source.read_text(encoding="utf-8"))
     imported: set[str] = set()
     for node in ast.walk(tree):
@@ -247,36 +294,39 @@ def test_triage_module_does_not_import_neo4j_graphiti_or_publishers() -> None:
     assert "newsroom.graphiti_adapter.adapter" not in imported
     assert "newsroom.auto_publish_grant" not in imported
     assert "newsroom.internal_beta_publish" not in imported
+    assert "newsroom.publication_decision" not in imported
 
 
-def test_triage_is_idempotent_and_does_not_rerun_prior_commands(
+def test_evidence_is_idempotent_and_does_not_rerun_prior_commands(
     tmp_path: Path,
 ) -> None:
     db = _db(tmp_path)
-    related = _relate(db)
-    first = record_first_boot_story_candidates(db, clock=lambda: NOW)
-    second = record_first_boot_story_candidates(db, clock=lambda: NOW)
+    triaged = _triage(db)
+    first = record_first_boot_evidence_packages(db, clock=lambda: NOW)
+    second = record_first_boot_evidence_packages(db, clock=lambda: NOW)
     assert first["ok"] is True
     assert second["ok"] is True
     assert len(first["admitted"]) == 6
     assert second["admitted"] == []
-    assert {item["reason"] for item in second["skipped"]} == {"already-triaged"}
-    assert first["extraction_runs"] == related["extraction_runs"] == 6
+    assert {item["reason"] for item in second["skipped"]} == {"already-packaged"}
+    assert first["extraction_runs"] == triaged["extraction_runs"] == 6
     assert first["canonical_entities"] == 12
     assert first["editorial_relation_assertions"] == 6
-    assert second["story_candidates"] == 6
+    assert first["story_candidates"] == 6
+    assert second["evidence_packages"] == 6
     assert second["story_candidate_versions"] == 0
     assert second["story_candidate_admission_receipts_v2"] == 6
     assert second["triage_work_items"] == 6
     assert _table_count(db, "extraction_runs") == 6
     assert _table_count(db, "canonical_entities") == 12
     assert _table_count(db, "editorial_relation_assertions") == 6
+    assert _table_count(db, "story_candidates") == 6
     assert _table_count(db, "story_candidate_versions") == 0
     assert _table_count(db, "event_hypotheses_v2") == 0
     assert _table_count(db, "evaluation_handoffs") == 0
 
 
-def test_triage_does_not_remint_publication_bundle(tmp_path: Path) -> None:
+def test_evidence_does_not_remint_publication_bundle(tmp_path: Path) -> None:
     db = _db(tmp_path)
     _seed_live_admissions(db)
     signal = load_first_discovery_signal(db)
@@ -287,23 +337,49 @@ def test_triage_does_not_remint_publication_bundle(tmp_path: Path) -> None:
     )
     before = _bundle_rows(db)
     assert len(before) == 1
+    decisions_before = _table_count(db, "ledger_events")
     _admit(db)
     record_first_boot_extraction(db, clock=lambda: NOW)
     record_first_boot_entity_resolution(db, clock=lambda: NOW)
     record_first_boot_editorial_relations(db, clock=lambda: NOW)
     record_first_boot_story_candidates(db, clock=lambda: NOW)
+    record_first_boot_evidence_packages(db, clock=lambda: NOW)
     after = _bundle_rows(db)
     assert after == before
     assert json.loads(after[0][2])["bundle_digest"] == recorded["bundle_digest"]
     assert after[0][1] == BUNDLE_EVENT
     open_host_store(db).close()
+    assert _table_count(db, "evidence_packages") == 6
     assert _table_count(db, "story_candidates") == 6
     assert _table_count(db, "story_candidate_versions") == 0
     assert _table_count(db, "triage_work_items") == 6
     assert _table_count(db, "extraction_runs") == 6
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        seq15 = conn.execute(
+            """
+            SELECT e.ledger_seq, e.event_type
+            FROM ledger_events e
+            WHERE e.event_type=?
+            ORDER BY e.ledger_seq
+            """,
+            (BUNDLE_EVENT,),
+        ).fetchall()
+        assert seq15
+        decisions = conn.execute(
+            """
+            SELECT COUNT(*) FROM ledger_events
+            WHERE event_type LIKE 'publication.decision%'
+            """
+        ).fetchone()
+        assert decisions is not None
+        assert int(decisions[0]) == 1
+    finally:
+        conn.close()
+    assert _table_count(db, "ledger_events") >= decisions_before
 
 
-def test_cli_triage_leads_after_relate(tmp_path: Path) -> None:
+def test_cli_evidence_leads_after_triage(tmp_path: Path) -> None:
     home = tmp_path / "newsroom"
     _install_uv_stub(tmp_path)
     feeds = tmp_path / "feeds"
@@ -334,23 +410,28 @@ def test_cli_triage_leads_after_relate(tmp_path: Path) -> None:
         assert related.returncode == 0, related.stderr + related.stdout
         triaged = _cli("triage-leads", home=home)
         assert triaged.returncode == 0, triaged.stderr + triaged.stdout
-        payload = json.loads(triaged.stdout)
+        packaged = _cli("evidence-leads", home=home)
+        assert packaged.returncode == 0, packaged.stderr + packaged.stdout
+        payload = json.loads(packaged.stdout)
         assert payload["ok"] is True
         assert payload["schema_version"] == 35
         assert payload["admitted"][0]["source_id"] == "HK-01"
         assert payload["admitted"][0]["authorises_publication"] is False
         assert payload["admitted"][0]["authorises_evidence"] is False
+        assert payload["admitted"][0]["invented_evidence"] is False
+        assert payload["admitted"][0]["publication_decision"] is False
+        assert payload["evidence_packages"] == 1
+        assert payload["evidence_package_heads"] == 1
+        assert payload["evidence_package_receipts"] == 1
         assert payload["story_candidates"] == 1
-        assert payload["story_candidate_heads"] == 1
-        assert payload["story_candidate_admission_receipts_v2"] == 1
         assert payload["story_candidate_versions"] == 0
-        assert payload["triage_work_items"] == 1
         assert payload["graphiti"] is False
         assert payload["neo4j"] is False
         assert payload["auto_publish"] is False
         db = ledger_path(home)
         assert _table_count(db, "news_leads") == 1
         assert _table_count(db, "story_candidates") == 1
+        assert _table_count(db, "evidence_packages") == 1
         assert _table_count(db, "story_candidate_versions") == 0
         assert _table_count(db, "triage_work_items") == 1
     finally:
