@@ -15,7 +15,10 @@ from newsroom.extraction.models import (
     ProducedExtraction,
     ProposalDraft,
 )
-from newsroom.extraction.output_schema import validate_fixture_production
+from newsroom.extraction.output_schema import (
+    validate_fixture_production,
+    validate_live_official_production,
+)
 from newsroom.extraction.policy import (
     EXTRACTION_RUN_EXECUTE_COMMAND,
     EXTRACTOR_CONTRACT_REGISTER_COMMAND,
@@ -233,7 +236,12 @@ class _ExtractionCommitMixin:
                 require_text=not replay,
             )
             contract_row = self._contract_row(conn, str(request.contract_id))
-            if str(contract_row["producer_kind"]) != "DETERMINISTIC_FIXTURE":
+            producer_kind = str(contract_row["producer_kind"])
+            if producer_kind == "DETERMINISTIC_FIXTURE":
+                validator = validate_fixture_production
+            elif producer_kind == "DETERMINISTIC_LIVE_OFFICIAL":
+                validator = validate_live_official_production
+            else:
                 raise AuthorityPersistenceError(
                     "unapproved extractor producer entered the authority store"
                 )
@@ -242,7 +250,7 @@ class _ExtractionCommitMixin:
                 retained_contract = self._contract_from_row(
                     conn, contract_row, replayed=False
                 )
-                validate_fixture_production(
+                validator(
                     contract=retained_contract.request,
                     request=request,
                     production=production,

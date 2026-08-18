@@ -74,6 +74,7 @@ class ProposalEnvelopeId(UUIDv4Id):
 
 class ExtractionExecutionProfile(StrEnum):
     FIXTURE_REPLAY_ONLY = "FIXTURE_REPLAY_ONLY"
+    LIVE_OFFICIAL = "LIVE_OFFICIAL"
 
 
 class ExtractionOutcome(StrEnum):

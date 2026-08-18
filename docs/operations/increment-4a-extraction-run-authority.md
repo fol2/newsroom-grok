@@ -288,3 +288,37 @@ legacy links, mutable events, clusters or identifier import
 ```
 
 Issue #226 / Increment 4B remains blocked until issue #225 is merged to `main`, closed with exact-head evidence, and the Extraction Run, retained-output, proposal, rights and replay contracts are stable. This operations document does not authorise 4B or any real runtime.
+
+## First-boot live-official extract (Increment 4A operator path)
+
+The fixture lane remains `FIXTURE_REPLAY_ONLY` with `DeterministicFixtureExtractor`. That producer must not run against live first-boot items.
+
+A separate live-official profile, `LIVE_OFFICIAL` / `DeterministicLiveOfficialExtractor`, extracts Proposal Envelopes from the exact Source Revision, Discovery Representation and one admitted representation passage bound to each queued News Lead. It does not key extract off `item_id` alone, does not remint `publication.bundle.with_body`, does not rewrite ledger events 2/3/4/7/15, does not invent 3C lineage, does not enable Graphiti, 4B, 4C ACCEPT, `AUTO_PUBLISH`, `public_adapter`, Discord, or X-as-publisher.
+
+`REAL_GRAPHITI_RUNTIME_ENABLED` stays `False`. Model/Graphiti extract remains Increment 4D.
+
+After merge, Daniel runs this on the first-boot host (`fol2/newsroom-grok`, home `/home/box/newsroom`) that already has the six queued leads (HK-01, HK-04, UK-01, UK-05, RAD-01, X-SEARCH-POSTS). Do not invent those rows. RAD-02 has no extract (item-gone, no allowlisted lead). UK-10 stays skip.
+
+```text
+uv run python3 scripts/newsroom_first_boot.py extract-leads --home /home/box/newsroom
+```
+
+Equivalent console script:
+
+```text
+newsroom-first-boot extract-leads --home /home/box/newsroom
+```
+
+Expected host result after a successful run:
+
+```text
+ok: true
+extraction_runs: 6
+extracted source_ids: HK-01, HK-04, UK-01, UK-05, RAD-01, X-SEARCH-POSTS
+RAD-02 / UK-10: not extracted
+graphiti / auto_publish / discord / public_adapter / x_as_publisher: false
+story_candidates / evidence_packages / canonical_entities / editorial_relation_decisions: unchanged empty
+```
+
+The command stops the host process if it is up, applies checked schema v33 if the ledger is still on v32, admits the six representation blobs into `data/objects`, persists `extraction_runs` plus increment-legal Proposal Envelopes, then restarts the host if it was up. A second run is idempotent: existing runs are skipped with `already-extracted`.
+

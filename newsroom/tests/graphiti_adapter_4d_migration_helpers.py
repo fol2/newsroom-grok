@@ -209,6 +209,7 @@ def _drop_empty_v31_operational_schema(connection: sqlite3.Connection) -> None:
 
 
 def _drop_empty_v32_recovery_schema(connection: sqlite3.Connection) -> None:
+    _drop_empty_v33_live_official_extraction_schema(connection)
     if int(connection.execute("PRAGMA user_version").fetchone()[0]) != 32:
         return
     from newsroom.authority.increment8_recovery_migrations import (
@@ -253,6 +254,84 @@ def _drop_empty_v32_recovery_schema(connection: sqlite3.Connection) -> None:
     connection.execute("DELETE FROM authority_migrations WHERE version=32")
     connection.execute(guard)
     connection.execute("PRAGMA user_version=31")
+
+
+def _drop_empty_v33_live_official_extraction_schema(connection: sqlite3.Connection) -> None:
+    if int(connection.execute("PRAGMA user_version").fetchone()[0]) != 33:
+        return
+    from newsroom.authority.extraction_migrations import (
+        EXTRACTION_AUTHORITY_MIGRATION_STATEMENTS,
+    )
+    from newsroom.authority.live_official_extraction_migrations import (
+        LIVE_OFFICIAL_EXTRACTION_MIGRATION_CHECKSUM,
+        LIVE_OFFICIAL_EXTRACTION_MIGRATION_NAME,
+    )
+
+    if connection.execute(
+        "SELECT name,checksum FROM authority_migrations WHERE version=33"
+    ).fetchone() != (
+        LIVE_OFFICIAL_EXTRACTION_MIGRATION_NAME,
+        LIVE_OFFICIAL_EXTRACTION_MIGRATION_CHECKSUM,
+    ):
+        raise sqlite3.DatabaseError(
+            "downgrade requires exact empty v33 live-official extraction schema"
+        )
+    live_rows = connection.execute(
+        "SELECT COUNT(*) FROM extractor_contracts "
+        "WHERE execution_profile!='FIXTURE_REPLAY_ONLY' "
+        "OR producer_kind!='DETERMINISTIC_FIXTURE'"
+    ).fetchone()[0]
+    if live_rows:
+        raise sqlite3.DatabaseError(
+            "v33 live-official extractor contracts cannot be reverted"
+        )
+    original_create = EXTRACTION_AUTHORITY_MIGRATION_STATEMENTS[0]
+    original_update = next(
+        statement
+        for statement in EXTRACTION_AUTHORITY_MIGRATION_STATEMENTS
+        if "immutable_extractor_contract_update" in statement
+    )
+    original_delete = next(
+        statement
+        for statement in EXTRACTION_AUTHORITY_MIGRATION_STATEMENTS
+        if "immutable_extractor_contract_delete" in statement
+    )
+    from newsroom.authority.graphiti_adapter_migrations import (
+        GRAPHITI_ADAPTER_MIGRATION_STATEMENTS,
+    )
+
+    graphiti_guard = next(
+        statement
+        for statement in GRAPHITI_ADAPTER_MIGRATION_STATEMENTS
+        if "CREATE TRIGGER graphiti_configuration_contract_guard" in statement
+    )
+    connection.execute("PRAGMA defer_foreign_keys=ON")
+    connection.execute("DROP TRIGGER graphiti_configuration_contract_guard")
+    connection.execute(
+        original_create.replace(
+            "CREATE TABLE extractor_contracts",
+            "CREATE TABLE extractor_contracts_v32",
+            1,
+        )
+    )
+    connection.execute(
+        "INSERT INTO extractor_contracts_v32 SELECT * FROM extractor_contracts"
+    )
+    connection.execute("DROP TABLE extractor_contracts")
+    connection.execute(
+        "ALTER TABLE extractor_contracts_v32 RENAME TO extractor_contracts"
+    )
+    connection.execute(original_update)
+    connection.execute(original_delete)
+    connection.execute(graphiti_guard)
+    guard = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type='trigger' "
+        "AND name='immutable_authority_migrations_delete'"
+    ).fetchone()[0]
+    connection.execute("DROP TRIGGER immutable_authority_migrations_delete")
+    connection.execute("DELETE FROM authority_migrations WHERE version=33")
+    connection.execute(guard)
+    connection.execute("PRAGMA user_version=32")
 
 
 def drop_empty_v28_coverage_schema(connection: sqlite3.Connection) -> None:

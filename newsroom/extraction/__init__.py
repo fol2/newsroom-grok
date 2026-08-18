@@ -42,6 +42,17 @@ from .policy import (
     merge_extraction_authority_registries,
 )
 from .producer import DeterministicFixtureExtractor
+from .live_official import (
+    EXPECTED_LIVE_OFFICIAL_CONTRACT_SEMANTIC_DIGEST,
+    LIVE_OFFICIAL_FORBIDDEN_TEXT_DIGESTS,
+    LIVE_OFFICIAL_PRODUCER_KIND,
+    live_official_contract_request,
+    require_live_official_contract,
+)
+from .live_official_producer import (
+    DeterministicLiveOfficialExtractor,
+    ExtractionProducerDispatcher,
+)
 from .output_schema import (
     FIXTURE_OUTPUT_SCHEMA,
     FIXTURE_OUTPUT_SCHEMA_DIGEST,
@@ -52,9 +63,16 @@ from .output_schema import (
     HOMONYM_FIXTURE_OUTPUT_SCHEMA_DIGEST,
     HOMONYM_FIXTURE_OUTPUT_SCHEMA_NAME,
     HOMONYM_FIXTURE_OUTPUT_SCHEMA_VERSION,
+    LIVE_OFFICIAL_OUTPUT_SCHEMA,
+    LIVE_OFFICIAL_OUTPUT_SCHEMA_DIGEST,
+    LIVE_OFFICIAL_OUTPUT_SCHEMA_ID,
+    LIVE_OFFICIAL_OUTPUT_SCHEMA_NAME,
+    LIVE_OFFICIAL_OUTPUT_SCHEMA_VERSION,
     fixture_output_schema_contract,
     fixture_output_schema_name_for_case,
+    live_official_output_schema_contract,
     validate_fixture_production,
+    validate_live_official_production,
 )
 from .types import (
     EvidenceRange,
@@ -101,6 +119,9 @@ __all__ = [
     "INCREMENT_4A_EXCLUSIONS",
     "INCREMENT_4A_DEFERRED",
     "DeterministicFixtureExtractor",
+    "DeterministicLiveOfficialExtractor",
+    "EXPECTED_LIVE_OFFICIAL_CONTRACT_SEMANTIC_DIGEST",
+    "ExtractionProducerDispatcher",
     "FIXTURE_OUTPUT_SCHEMA",
     "FIXTURE_OUTPUT_SCHEMA_DIGEST",
     "FIXTURE_OUTPUT_SCHEMA_ID",
@@ -110,6 +131,13 @@ __all__ = [
     "HOMONYM_FIXTURE_OUTPUT_SCHEMA_DIGEST",
     "HOMONYM_FIXTURE_OUTPUT_SCHEMA_NAME",
     "HOMONYM_FIXTURE_OUTPUT_SCHEMA_VERSION",
+    "LIVE_OFFICIAL_FORBIDDEN_TEXT_DIGESTS",
+    "LIVE_OFFICIAL_OUTPUT_SCHEMA",
+    "LIVE_OFFICIAL_OUTPUT_SCHEMA_DIGEST",
+    "LIVE_OFFICIAL_OUTPUT_SCHEMA_ID",
+    "LIVE_OFFICIAL_OUTPUT_SCHEMA_NAME",
+    "LIVE_OFFICIAL_OUTPUT_SCHEMA_VERSION",
+    "LIVE_OFFICIAL_PRODUCER_KIND",
     "EXPECTED_FIXTURE_CONTRACT_SEMANTIC_DIGEST",
     "EXPECTED_FIXTURE_CONTRACT_SEMANTIC_DIGESTS",
     "FIXTURE_ALLOWED_TEXT_DIGESTS",
@@ -172,6 +200,10 @@ __all__ = [
     "fixture_output_schema_contract",
     "fixture_output_schema_name_for_case",
     "fixture_texts_for_case",
+    "live_official_contract_request",
+    "live_official_output_schema_contract",
     "merge_extraction_authority_registries",
+    "require_live_official_contract",
     "validate_fixture_production",
+    "validate_live_official_production",
 ]
