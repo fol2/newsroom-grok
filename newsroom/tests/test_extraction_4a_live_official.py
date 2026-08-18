@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from newsroom.authority.canonical import canonical_json_bytes, digest_bytes
@@ -19,7 +21,9 @@ from newsroom.extraction import (
     ExtractionRunRequest,
     ExtractionRunVersionId,
     ExtractorContractId,
+    FIXTURE_EN_LANGUAGE,
     FIXTURE_EN_TEXT,
+    FIXTURE_ZH_HK_LANGUAGE,
     live_official_contract_request,
 )
 from newsroom.extraction.fixtures import deterministic_fixture_contract_request
@@ -108,7 +112,10 @@ def _request(text: str, *, item_id: str | None = None) -> ExtractionRunRequest:
 
 
 def test_fixture_extractor_rejects_live_representation_bytes() -> None:
-    with pytest.raises(ExtractionContractError, match="approved fixture bytes"):
+    with pytest.raises(
+        ExtractionContractError,
+        match="exact en-GB and zh-HK passages",
+    ):
         DeterministicFixtureExtractor().produce(
             contract=deterministic_fixture_contract_request(
                 contract_id=ExtractorContractId.parse(
@@ -116,6 +123,64 @@ def test_fixture_extractor_rejects_live_representation_bytes() -> None:
                 )
             ),
             request=_request(_LIVE_JSON),
+        )
+
+
+def test_fixture_extractor_rejects_live_bytes_even_with_fixture_languages() -> None:
+    en = replace(_passage(_LIVE_JSON), language=FIXTURE_EN_LANGUAGE)
+    zh = replace(
+        _passage(_LIVE_JSON),
+        passage_id=ExtractionPassageId.parse("00000000-0000-4000-8000-000000004306"),
+        admission_id=ObjectAdmissionId.parse("00000000-0000-4000-8000-000000004307"),
+        access_decision_id=ObjectAccessDecisionId.parse(
+            "00000000-0000-4000-8000-000000004308"
+        ),
+        language=FIXTURE_ZH_HK_LANGUAGE,
+    )
+    request = ExtractionRunRequest(
+        run_id=ExtractionRunId.parse("00000000-0000-4000-8000-000000004304"),
+        run_version_id=ExtractionRunVersionId.parse(
+            "00000000-0000-4000-8000-000000004305"
+        ),
+        version_number=1,
+        expected_previous_version_id=None,
+        contract_id=ExtractorContractId.parse("00000000-0000-4000-8000-000000004101"),
+        input_binding=ExtractionInputBinding(
+            definition_id=SourceDefinitionId.parse(
+                "00000000-0000-4000-8000-000000004310"
+            ),
+            definition_version_id=SourceDefinitionVersionId.parse(
+                "00000000-0000-4000-8000-000000004311"
+            ),
+            item_id=SourceItemId.parse("00000000-0000-4000-8000-000000004313"),
+            revision_id=SourceRevisionId.parse(
+                "00000000-0000-4000-8000-000000004314"
+            ),
+            representation_id=DiscoveryRepresentationId.parse(
+                "00000000-0000-4000-8000-000000004315"
+            ),
+            passages=(en, zh),
+        ),
+        budget=ExtractionBudget(
+            timeout_ms=10_000,
+            max_input_bytes=64 * 1024,
+            max_output_bytes=256 * 1024,
+            max_proposals=100,
+            max_evidence_ranges=500,
+            max_request_tokens=0,
+            max_response_tokens=0,
+            max_cost_microunits=0,
+        ),
+        idempotency_key="live-official-unit-v1",
+    )
+    with pytest.raises(ExtractionContractError, match="approved fixture bytes"):
+        DeterministicFixtureExtractor().produce(
+            contract=deterministic_fixture_contract_request(
+                contract_id=ExtractorContractId.parse(
+                    "00000000-0000-4000-8000-000000004101"
+                )
+            ),
+            request=request,
         )
 
 

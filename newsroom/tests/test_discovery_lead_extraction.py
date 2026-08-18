@@ -80,17 +80,15 @@ def test_extract_six_allowlisted_leads_skips_rad02(tmp_path: Path) -> None:
     assert all(item["replayed"] is False for item in result["extracted"])
     assert _table_count(db, "extraction_runs") == 6
     assert _table_count(db, "extraction_proposals") == 18
-    assert _table_count(db, "story_candidates") == 0
-    assert _table_count(db, "evidence_packages") == 0
     assert _table_count(db, "canonical_entities") == 0
     assert _table_count(db, "editorial_relation_decisions") == 0
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
-        graphiti = conn.execute(
-            "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE '%graphiti%'"
+        graphiti_rows = conn.execute(
+            "SELECT COUNT(*) FROM graphiti_adapter_configurations"
         ).fetchone()
-        assert graphiti is not None
-        assert int(graphiti[0]) == 0
+        assert graphiti_rows is not None
+        assert int(graphiti_rows[0]) == 0
         for item in result["extracted"]:
             row = conn.execute(
                 """

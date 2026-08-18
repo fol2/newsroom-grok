@@ -22,11 +22,13 @@ from newsroom.authority import (
 from newsroom.authority.discovery_system import (
     open_governed_discovery_authority_system,
 )
+from newsroom.authority.object_policy import merge_authority_registries
 from newsroom.authority.types import UtcTimestamp
 from newsroom.checks.policy import merge_discovery_check_authority_registries
 from newsroom.checks.read_policy import DiscoveryCheckReadPolicy
 from newsroom.discovery.policy import merge_discovery_signal_lead_registries
 from newsroom.discovery.types import DiscoveryReadPolicy
+from newsroom.extraction.policy import merge_extraction_authority_registries
 from newsroom.sources import SourceRegistryReadPolicy
 from newsroom.sources.policy import merge_source_registry_authority_registries
 from newsroom.discovery_ingest import (
@@ -203,7 +205,15 @@ def host_authority_registries() -> tuple[CommandRegistry, PayloadSchemaRegistry]
         command_registry=registry,
         payload_schemas=schemas,
     )
-    return merge_discovery_signal_lead_registries(
+    registry, schemas = merge_discovery_signal_lead_registries(
+        command_registry=registry,
+        payload_schemas=schemas,
+    )
+    registry, schemas = merge_authority_registries(
+        command_registry=registry,
+        payload_schemas=schemas,
+    )
+    return merge_extraction_authority_registries(
         command_registry=registry,
         payload_schemas=schemas,
     )
@@ -318,6 +328,8 @@ def open_host_store(path: Path) -> object:
                     "authority.source_registry",
                     "authority.discovery_checks",
                     "authority.audit",
+                    "authority.object_lifecycle",
+                    "authority.extraction",
                 }
             ),
             allowed_trust_scopes=frozenset(

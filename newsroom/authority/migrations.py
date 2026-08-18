@@ -1566,6 +1566,13 @@ def apply_pending_migrations(conn: sqlite3.Connection, *, applied_at: str) -> No
                     conn, expected_history=tuple((r.version, r.name, r.checksum) for r in MIGRATIONS
                                                  if r.version <= INCREMENT8_RECOVERY_SCHEMA_VERSION),
                 )
+                # Parent CHECK rebuild: DROP/RENAME of extractor_contracts orphans
+                # retained extraction_runs FKs at COMMIT if foreign_keys stay ON.
+                # PRAGMA foreign_keys cannot change inside a transaction.
+                if conn.in_transaction:
+                    conn.execute("COMMIT")
+                conn.execute("PRAGMA foreign_keys=OFF")
+                conn.execute("BEGIN EXCLUSIVE")
             for statement in LIVE_OFFICIAL_EXTRACTION_MIGRATION_STATEMENTS:
                 conn.execute(statement)
             conn.execute(
@@ -1574,12 +1581,18 @@ def apply_pending_migrations(conn: sqlite3.Connection, *, applied_at: str) -> No
                  LIVE_OFFICIAL_EXTRACTION_MIGRATION_CHECKSUM, applied_at),
             )
             current = LIVE_OFFICIAL_EXTRACTION_SCHEMA_VERSION
+            if starting_version != 0:
+                conn.execute(f"PRAGMA user_version={current}")
+                conn.execute("COMMIT")
+                conn.execute("PRAGMA foreign_keys=ON")
+                conn.execute("BEGIN EXCLUSIVE")
         # fmt: on
         conn.execute(f"PRAGMA user_version={current}")
         conn.execute("COMMIT")
     except Exception:
         if conn.in_transaction:
             conn.execute("ROLLBACK")
+        conn.execute("PRAGMA foreign_keys=ON")
         raise
 
 

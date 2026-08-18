@@ -121,40 +121,55 @@ class DeterministicLiveOfficialExtractor:
         item_id = payload["item_id"]
         source_range = _json_value_range(text, "source_id", source_id, passage.passage_id)
         item_range = _json_value_range(text, "item_id", item_id, passage.passage_id)
-        proposals = (
-            ProposalDraft(
-                local_id="entity.source",
-                kind=ExtractionProposalKind.ENTITY_MENTION,
-                subject_placeholder=source_id,
-                object_placeholder=None,
-                predicate_hint=None,
-                confidence_basis_points=9_800,
-                uncertainty_codes=(),
-                rationale_codes=("BOUND_REPRESENTATION_SPAN",),
-                evidence=(source_range,),
-            ),
-            ProposalDraft(
-                local_id="entity.item",
-                kind=ExtractionProposalKind.ENTITY_MENTION,
-                subject_placeholder=item_id,
-                object_placeholder=None,
-                predicate_hint=None,
-                confidence_basis_points=9_800,
-                uncertainty_codes=(),
-                rationale_codes=("BOUND_REPRESENTATION_SPAN",),
-                evidence=(item_range,),
-            ),
-            ProposalDraft(
-                local_id="relation.source-about-item",
-                kind=ExtractionProposalKind.RELATION,
-                subject_placeholder=source_id,
-                object_placeholder=item_id,
-                predicate_hint=ProposalPredicateHint.ABOUT_EVENT,
-                confidence_basis_points=9_000,
-                uncertainty_codes=("REQUIRES_RELATION_ADMISSION",),
-                rationale_codes=("BOUND_REPRESENTATION_SPAN",),
-                evidence=(source_range, item_range),
-            ),
+        relation_evidence = tuple(
+            sorted(
+                (source_range, item_range),
+                key=lambda item: (
+                    str(item.passage_id),
+                    item.start_byte,
+                    item.end_byte,
+                ),
+            )
+        )
+        proposals = tuple(
+            sorted(
+                (
+                    ProposalDraft(
+                        local_id="entity.source",
+                        kind=ExtractionProposalKind.ENTITY_MENTION,
+                        subject_placeholder=source_id,
+                        object_placeholder=None,
+                        predicate_hint=None,
+                        confidence_basis_points=9_800,
+                        uncertainty_codes=(),
+                        rationale_codes=("BOUND_REPRESENTATION_SPAN",),
+                        evidence=(source_range,),
+                    ),
+                    ProposalDraft(
+                        local_id="entity.item",
+                        kind=ExtractionProposalKind.ENTITY_MENTION,
+                        subject_placeholder=item_id,
+                        object_placeholder=None,
+                        predicate_hint=None,
+                        confidence_basis_points=9_800,
+                        uncertainty_codes=(),
+                        rationale_codes=("BOUND_REPRESENTATION_SPAN",),
+                        evidence=(item_range,),
+                    ),
+                    ProposalDraft(
+                        local_id="relation.source-about-item",
+                        kind=ExtractionProposalKind.RELATION,
+                        subject_placeholder=source_id,
+                        object_placeholder=item_id,
+                        predicate_hint=ProposalPredicateHint.ABOUT_EVENT,
+                        confidence_basis_points=9_000,
+                        uncertainty_codes=("REQUIRES_RELATION_ADMISSION",),
+                        rationale_codes=("BOUND_REPRESENTATION_SPAN",),
+                        evidence=relation_evidence,
+                    ),
+                ),
+                key=lambda item: item.local_id,
+            )
         )
         raw = {
             "schema_version": LIVE_OFFICIAL_OUTPUT_SCHEMA_NAME,

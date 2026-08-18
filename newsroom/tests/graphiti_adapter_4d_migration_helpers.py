@@ -286,44 +286,12 @@ def _drop_empty_v33_live_official_extraction_schema(connection: sqlite3.Connecti
             "v33 live-official extractor contracts cannot be reverted"
         )
     original_create = EXTRACTION_AUTHORITY_MIGRATION_STATEMENTS[0]
-    original_update = next(
-        statement
-        for statement in EXTRACTION_AUTHORITY_MIGRATION_STATEMENTS
-        if "immutable_extractor_contract_update" in statement
-    )
-    original_delete = next(
-        statement
-        for statement in EXTRACTION_AUTHORITY_MIGRATION_STATEMENTS
-        if "immutable_extractor_contract_delete" in statement
-    )
-    from newsroom.authority.graphiti_adapter_migrations import (
-        GRAPHITI_ADAPTER_MIGRATION_STATEMENTS,
-    )
-
-    graphiti_guard = next(
-        statement
-        for statement in GRAPHITI_ADAPTER_MIGRATION_STATEMENTS
-        if "CREATE TRIGGER graphiti_configuration_contract_guard" in statement
-    )
-    connection.execute("PRAGMA defer_foreign_keys=ON")
-    connection.execute("DROP TRIGGER graphiti_configuration_contract_guard")
+    connection.execute("PRAGMA writable_schema=ON")
     connection.execute(
-        original_create.replace(
-            "CREATE TABLE extractor_contracts",
-            "CREATE TABLE extractor_contracts_v32",
-            1,
-        )
+        "UPDATE sqlite_master SET sql=? WHERE type='table' AND name='extractor_contracts'",
+        (original_create,),
     )
-    connection.execute(
-        "INSERT INTO extractor_contracts_v32 SELECT * FROM extractor_contracts"
-    )
-    connection.execute("DROP TABLE extractor_contracts")
-    connection.execute(
-        "ALTER TABLE extractor_contracts_v32 RENAME TO extractor_contracts"
-    )
-    connection.execute(original_update)
-    connection.execute(original_delete)
-    connection.execute(graphiti_guard)
+    connection.execute("PRAGMA writable_schema=OFF")
     guard = connection.execute(
         "SELECT sql FROM sqlite_master WHERE type='trigger' "
         "AND name='immutable_authority_migrations_delete'"
