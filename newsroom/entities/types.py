@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Iterable
+import json
 import unicodedata
 
-from newsroom.authority.canonical import digest_canonical, validate_sha256_digest
+from newsroom.authority.canonical import digest_bytes, digest_canonical, validate_sha256_digest
 from newsroom.authority.types import UUIDv4Id, require_scope, require_token
 
 
@@ -46,6 +47,37 @@ def require_normalized_entity_text(value: str, *, field: str) -> str:
             f"{field} must equal deterministic entity normalisation"
         )
     return value
+
+
+def resolve_mention_text(
+    placeholder: str,
+    *,
+    start_byte: int,
+    end_byte: int,
+    evidence_text_digest: str,
+) -> str:
+    """Return exact evidence text without treating extractor names as identity.
+
+    Fixture mentions copy the placeholder into the evidence span. Live-official
+    4A JSON value spans retain ``json.dumps(placeholder)`` including quotes.
+    """
+
+    bounded_text(placeholder, field="mention_placeholder", maximum_bytes=4096)
+    canonical_digest(evidence_text_digest, field="mention_evidence_text_digest")
+    span = bounded_int(
+        end_byte - start_byte,
+        field="mention_evidence_span",
+        minimum=1,
+        maximum=2**31 - 1,
+    )
+    candidates = (placeholder, json.dumps(placeholder, ensure_ascii=False))
+    for text in candidates:
+        data = text.encode("utf-8")
+        if len(data) == span and digest_bytes(data) == evidence_text_digest:
+            return text
+    raise EntityContractError(
+        "mention placeholder differs from exact extraction evidence"
+    )
 
 
 def classify_entity_script(value: str) -> EntityScript:

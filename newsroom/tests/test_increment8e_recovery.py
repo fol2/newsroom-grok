@@ -67,10 +67,11 @@ def test_v31_to_v32_requires_exact_backup_and_preserves_prefix(tmp_path) -> None
         migrations.SCHEMA_VERSION,
     )
     assert connection.execute(
-        "SELECT version,name FROM authority_migrations WHERE version IN (32,33) ORDER BY version"
+        "SELECT version,name FROM authority_migrations WHERE version IN (32,33,34) ORDER BY version"
     ).fetchall() == [
         (32, "increment8_recovery_authority_v32"),
         (33, "live_official_extraction_authority_v33"),
+        (34, "live_official_entity_mention_authority_v34"),
     ]
     assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     connection.close()
@@ -85,10 +86,29 @@ def test_v32_to_v33_requires_exact_backup_and_preserves_prefix(tmp_path) -> None
     receipt = migrations.prepare_pending_migration_backup(connection)
     assert receipt is not None
     migrations.apply_pending_migrations(connection, applied_at=_AT)
-    assert connection.execute("PRAGMA user_version").fetchone() == (33,)
+    assert connection.execute("PRAGMA user_version").fetchone() == (
+        migrations.SCHEMA_VERSION,
+    )
     assert connection.execute(
         "SELECT version,name FROM authority_migrations ORDER BY version DESC LIMIT 1"
-    ).fetchone() == (33, "live_official_extraction_authority_v33")
+    ).fetchone() == (34, "live_official_entity_mention_authority_v34")
+    assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    connection.close()
+
+
+def test_v33_to_v34_requires_exact_backup_and_preserves_prefix(tmp_path) -> None:
+    path = tmp_path / "v33.sqlite3"
+    build_exact_prefix(path, 33)
+    connection = sqlite3.connect(path, isolation_level=None)
+    with pytest.raises(sqlite3.DatabaseError, match="prepared backup"):
+        migrations.apply_pending_migrations(connection, applied_at=_AT)
+    receipt = migrations.prepare_pending_migration_backup(connection)
+    assert receipt is not None
+    migrations.apply_pending_migrations(connection, applied_at=_AT)
+    assert connection.execute("PRAGMA user_version").fetchone() == (34,)
+    assert connection.execute(
+        "SELECT version,name FROM authority_migrations ORDER BY version DESC LIMIT 1"
+    ).fetchone() == (34, "live_official_entity_mention_authority_v34")
     assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     connection.close()
 

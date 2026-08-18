@@ -53,6 +53,7 @@ _EXPECTED_NAMES = {
     31: "increment8_operational_authority_v31",
     32: "increment8_recovery_authority_v32",
     33: "live_official_extraction_authority_v33",
+    34: "live_official_entity_mention_authority_v34",
 }
 _EXPECTED_CHECKSUMS = {
     13: "sha256:c3e5ae627dda1c04bebc50952786413d977bd399e67b7f5b87452794f08f49ab",
@@ -76,6 +77,7 @@ _EXPECTED_CHECKSUMS = {
     31: "sha256:b3a9535516836d7a0023cc0c030926edd8036b0fd8b31b9647342a9612152342",
     32: "sha256:513d983ce8f21f576c08b6a99337f3164025b73e588867d8dde4d500805f79ee",
     33: "sha256:d808df71d9b5d4f9368e92fca8baacbc965994a61c9bbf24d92acba389028580",
+    34: "sha256:541e7c38c263b72d94868ae893dd06a7711b3d0d33de2e6f786419de512bb8fe",
 }
 
 _EXPECTED_MATRIX = """version | migration | objects | history fingerprint | schema fingerprint | object fingerprint
@@ -101,6 +103,7 @@ v30 | increment8_evaluation_authority_v30 | 1456 | sha256:abcca56b09c0f49ea8315f
 v31 | increment8_operational_authority_v31 | 1486 | sha256:7a1592121ba3f2c399f7fcdefdf8d618b6d7f08ecc94ffa96ca918e8213e0830 | sha256:8a8f2aafc484a4d0270b0fbc582c2c22fc83e545570e3117b0b2be8eee874bc5 | sha256:097fde371d437c41a9493a95f788857cfae0b53dd42f1ef466b713a9022a4964
 v32 | increment8_recovery_authority_v32 | 1511 | sha256:5a48fd76cd11f266e19a4b48174d0c009f320a8d00d3eeb281a558fc2d561910 | sha256:3439b82ec6d212116e54765d50cace4d7f147b6ecc3e6ff84146b523c6fd5676 | sha256:ca9ce0c8b304f7d7bccb2f1e3796f02ff4d0c024a6fa78dc4d2098478afe4fae
 v33 | live_official_extraction_authority_v33 | 1511 | sha256:3ee61d52acda8f4ca973f0f042dabf1f7509ff3f06075740ebffe97c817f4c5e | sha256:2b297e1c4755590f5877a6afa735297e6788447b2e55937d45122d6df2094104 | sha256:37568daca29fe22788f610069c03abcfc7b3fcdbcdb21653a55ed37941fb0f60
+v34 | live_official_entity_mention_authority_v34 | 1511 | sha256:0b275083928f50eac7403aa46382ecc223905ca83e02f5ac80b2bc1836eca131 | sha256:22fbc6d53e7bcb78cd8dba14c52c2b5bd8c0bb3d7f8d87ba5843125397bbc317 | sha256:0499d2c694b18e4215df6e629406bab9476f68ff449239b5a86692729ef4fe0b
 """
 
 
