@@ -1,4 +1,4 @@
-"""Grok Bot first-boot bring-up, grant, ingest, X-search ingest, mint, dispatch, internal-beta publish, AUTO-010 commit, Neo4j project, News Lead admission, live-official extract, accepted-material entity resolution, editorial relation ACCEPT, Story Candidate triage, Evidence Package, and emergency stop."""
+"""Grok Bot first-boot bring-up, grant, ingest, X-search ingest, mint, dispatch, internal-beta publish, AUTO-010 commit, Neo4j project, News Lead admission, live-official extract, accepted-material entity resolution, editorial relation ACCEPT, Story Candidate triage, Evidence Package, original 粵語 write, and emergency stop."""
 
 from __future__ import annotations
 
@@ -814,6 +814,53 @@ def evidence_leads(
     return recorded
 
 
+
+def write_leads(
+    home: Path,
+    *,
+    project_root: Path | None = None,
+) -> dict[str, Any]:
+    from newsroom.discovery_lead_original_writes import (
+        LeadOriginalWriteError,
+        record_first_boot_original_writes,
+    )
+
+    db = ledger_path(home)
+    if not _ledger_present(home):
+        raise FirstBootError(
+            "ledger missing; run newsroom-first-boot start first"
+        )
+    if restore_paused(home):
+        raise FirstBootError(
+            "emergency stop is paused; resume is required before live-official write"
+        )
+    paused = restore_paused(home)
+    was_up = process_is_up(home)
+    if was_up:
+        stop(home)
+    try:
+        recorded = record_first_boot_original_writes(db)
+    except FirstBootError:
+        if was_up and not paused:
+            start(home, project_root=project_root)
+        raise
+    except LeadOriginalWriteError as exc:
+        if was_up and not paused:
+            start(home, project_root=project_root)
+        raise FirstBootError(str(exc)) from exc
+    except Exception as exc:
+        if was_up and not paused:
+            start(home, project_root=project_root)
+        raise FirstBootError(
+            f"live-official original 粵語 write failed: {exc}"
+        ) from exc
+    if was_up and not paused:
+        start(home, project_root=project_root)
+    recorded["home"] = str(home)
+    recorded["ledger_path"] = str(db)
+    return recorded
+
+
 def dispatch_target(
     home: Path,
     *,
@@ -1020,7 +1067,7 @@ def project_neo4j(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="First-boot bring-up, grant, ingest, X-search ingest, mint, dispatch, internal-beta publish, AUTO-010 commit, Neo4j project, News Lead admission, live-official extract, accepted-material entity resolution, editorial relation ACCEPT, Story Candidate triage, Evidence Package, and emergency stop."
+        description="First-boot bring-up, grant, ingest, X-search ingest, mint, dispatch, internal-beta publish, AUTO-010 commit, Neo4j project, News Lead admission, live-official extract, accepted-material entity resolution, editorial relation ACCEPT, Story Candidate triage, Evidence Package, original 粵語 write, and emergency stop."
     )
     parser.add_argument(
         "command",
@@ -1042,6 +1089,7 @@ def main(argv: list[str] | None = None) -> int:
             "relate-leads",
             "triage-leads",
             "evidence-leads",
+            "write-leads",
             "dispatch-target",
             "dispatch-internal-beta",
             "auto-010-commit",
@@ -1122,6 +1170,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "evidence-leads":
             _print_json(evidence_leads(home, project_root=project_root))
+            return 0
+        if args.command == "write-leads":
+            _print_json(write_leads(home, project_root=project_root))
             return 0
         if args.command == "dispatch-target":
             _print_json(dispatch_target(home, project_root=project_root))

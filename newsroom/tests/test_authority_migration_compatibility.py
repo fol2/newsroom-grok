@@ -55,6 +55,7 @@ _EXPECTED_NAMES = {
     33: "live_official_extraction_authority_v33",
     34: "live_official_entity_mention_authority_v34",
     35: "live_official_evidence_package_authority_v35",
+    36: "live_official_original_write_authority_v36",
 }
 _EXPECTED_CHECKSUMS = {
     13: "sha256:c3e5ae627dda1c04bebc50952786413d977bd399e67b7f5b87452794f08f49ab",
@@ -80,6 +81,7 @@ _EXPECTED_CHECKSUMS = {
     33: "sha256:d808df71d9b5d4f9368e92fca8baacbc965994a61c9bbf24d92acba389028580",
     34: "sha256:541e7c38c263b72d94868ae893dd06a7711b3d0d33de2e6f786419de512bb8fe",
     35: "sha256:7ad509f00db8fd86f53d97dce7986014488971d23810174d10cb81be63bef238",
+    36: "sha256:0b1cf50f7b75ce7e6d67ee2b0eb4598f279762d33db107fe86e278ac164d1602",
 }
 
 _EXPECTED_MATRIX = """version | migration | objects | history fingerprint | schema fingerprint | object fingerprint
@@ -107,6 +109,7 @@ v32 | increment8_recovery_authority_v32 | 1511 | sha256:5a48fd76cd11f266e19a4b48
 v33 | live_official_extraction_authority_v33 | 1511 | sha256:3ee61d52acda8f4ca973f0f042dabf1f7509ff3f06075740ebffe97c817f4c5e | sha256:2b297e1c4755590f5877a6afa735297e6788447b2e55937d45122d6df2094104 | sha256:37568daca29fe22788f610069c03abcfc7b3fcdbcdb21653a55ed37941fb0f60
 v34 | live_official_entity_mention_authority_v34 | 1511 | sha256:0b275083928f50eac7403aa46382ecc223905ca83e02f5ac80b2bc1836eca131 | sha256:22fbc6d53e7bcb78cd8dba14c52c2b5bd8c0bb3d7f8d87ba5843125397bbc317 | sha256:0499d2c694b18e4215df6e629406bab9476f68ff449239b5a86692729ef4fe0b
 v35 | live_official_evidence_package_authority_v35 | 1528 | sha256:26bbc282232349c468bd47f2919e2869dd84d77f4e3dbf5ea28f25cc08060741 | sha256:45fe0333359ff4792d20a6fe68713c38a135aaaa2132bb47cb9a1d8d550cefdb | sha256:0ad2d17d3a57624258f120af55d30ee59b5f81ff624eeb1fbff74c9b90be553a
+v36 | live_official_original_write_authority_v36 | 1545 | sha256:97d6a03c80561f16a80ed9b4a75d73b9c026b06d856f22c5a14ecf83b1a51884 | sha256:d3606ee6cc31c93a9b7a1bb3b5548b913668befccb08115e9d5a13195a04e408 | sha256:cda16f90b4760b04bb6ff8c12bfb32cd65ff1c945cfe81aba4f0d180f5421e7e
 """
 
 

@@ -228,7 +228,7 @@ def test_package_six_allowlisted_candidates_skips_rad02_and_excludes_neo4j(
     result = record_first_boot_evidence_packages(db, clock=lambda: NOW)
     assert REAL_GRAPHITI_RUNTIME_ENABLED is False
     assert result["ok"] is True
-    assert result["schema_version"] == 35
+    assert result["schema_version"] == 36
     assert result["graphiti"] is False
     assert result["neo4j"] is False
     assert result["graphiti_runtime_enabled"] is False
@@ -414,7 +414,7 @@ def test_cli_evidence_leads_after_triage(tmp_path: Path) -> None:
         assert packaged.returncode == 0, packaged.stderr + packaged.stdout
         payload = json.loads(packaged.stdout)
         assert payload["ok"] is True
-        assert payload["schema_version"] == 35
+        assert payload["schema_version"] == 36
         assert payload["admitted"][0]["source_id"] == "HK-01"
         assert payload["admitted"][0]["authorises_publication"] is False
         assert payload["admitted"][0]["authorises_evidence"] is False
