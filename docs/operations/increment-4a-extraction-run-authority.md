@@ -288,3 +288,15 @@ legacy links, mutable events, clusters or identifier import
 ```
 
 Issue #226 / Increment 4B remains blocked until issue #225 is merged to `main`, closed with exact-head evidence, and the Extraction Run, retained-output, proposal, rights and replay contracts are stable. This operations document does not authorise 4B or any real runtime.
+
+
+## First-boot live official lane (#82)
+
+The governed Increment 4A facade on this document remains
+`FIXTURE_REPLAY_ONLY` / `DeterministicFixtureExtractor`.
+
+First-boot `extract-signal` is a separate live-official lane. It records
+`extraction.run.executed` proposal envelopes derived from admitted official
+bytes. It does not remint `mint-bundle-body`, does not treat fixture rows as
+live, and does not populate Neo4j or News Leads. See
+`docs/operations/first-boot-extract-signal.md`.

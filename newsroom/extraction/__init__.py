@@ -41,6 +41,11 @@ from .policy import (
     extraction_payload_contracts,
     merge_extraction_authority_registries,
 )
+from .live_official import (
+    LIVE_OFFICIAL_PRODUCER_KIND,
+    LIVE_OFFICIAL_PROFILE,
+    LiveOfficialExtractor,
+)
 from .producer import DeterministicFixtureExtractor
 from .output_schema import (
     FIXTURE_OUTPUT_SCHEMA,
@@ -101,6 +106,9 @@ __all__ = [
     "INCREMENT_4A_EXCLUSIONS",
     "INCREMENT_4A_DEFERRED",
     "DeterministicFixtureExtractor",
+    "LIVE_OFFICIAL_PRODUCER_KIND",
+    "LIVE_OFFICIAL_PROFILE",
+    "LiveOfficialExtractor",
     "FIXTURE_OUTPUT_SCHEMA",
     "FIXTURE_OUTPUT_SCHEMA_DIGEST",
     "FIXTURE_OUTPUT_SCHEMA_ID",

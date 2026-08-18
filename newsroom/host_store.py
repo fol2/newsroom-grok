@@ -57,6 +57,10 @@ from newsroom.publication_bundle import (
     bundle_command_definition,
     bundle_payload_contract,
 )
+from newsroom.extraction_signal import (
+    extract_command_definition,
+    extract_payload_contract,
+)
 from newsroom.target_operation import (
     operation_command_definition,
     operation_payload_contract,
@@ -121,6 +125,7 @@ def open_host_store(path: Path) -> object:
     operation_contract = operation_payload_contract()
     publish_contract = publish_payload_contract()
     bundle_contract = bundle_payload_contract()
+    extract_contract = extract_payload_contract()
     return open_authority_event_system(
         path=path,
         registry=CommandRegistry(
@@ -136,6 +141,7 @@ def open_host_store(path: Path) -> object:
                 operation_command_definition(operation_contract),
                 publish_command_definition(publish_contract),
                 bundle_command_definition(bundle_contract),
+                extract_command_definition(extract_contract),
             ]
         ),
         payload_schemas=PayloadSchemaRegistry(
@@ -151,6 +157,7 @@ def open_host_store(path: Path) -> object:
                 operation_contract,
                 publish_contract,
                 bundle_contract,
+                extract_contract,
             )
         ),
         authenticator=StaticAuthenticator(
@@ -186,6 +193,7 @@ def open_host_store(path: Path) -> object:
                         "authority.autopublish.grant",
                         "authority.internal_beta.grant",
                         "authority.discovery.ingest",
+                        "authority.extraction.execute",
                         "authority.host.read",
                     }
                 ),
@@ -211,6 +219,7 @@ def open_host_store(path: Path) -> object:
                     "authority.envelope",
                     "authority.discovery",
                     "authority.publication",
+                    "authority.extraction",
                 }
             ),
             allowed_trust_scopes=frozenset(
