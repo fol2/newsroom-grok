@@ -1,4 +1,4 @@
-"""Grok Bot first-boot bring-up, grant, ingest, X-search ingest, mint, dispatch, internal-beta publish, AUTO-010 commit, and emergency stop."""
+"""Grok Bot first-boot bring-up, grant, ingest, X-search ingest, mint, dispatch, internal-beta publish, AUTO-010 commit, Neo4j project, and emergency stop."""
 
 from __future__ import annotations
 
@@ -722,9 +722,32 @@ def auto_010_commit(
     }
 
 
+def project_neo4j(
+    home: Path,
+    *,
+    project_root: Path | None = None,
+) -> dict[str, Any]:
+    from newsroom.neo4j_host_projection import project_host_neo4j
+
+    if not _ledger_present(home):
+        raise FirstBootError(
+            "ledger missing; run newsroom-first-boot start first"
+        )
+    if restore_paused(home):
+        raise FirstBootError(
+            "emergency stop is paused; resume is required before Neo4j projection"
+        )
+    try:
+        return project_host_neo4j(home)
+    except FirstBootError:
+        raise
+    except Exception as exc:
+        raise FirstBootError(f"Neo4j host projection failed: {exc}") from exc
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="First-boot bring-up, grant, ingest, X-search ingest, mint, dispatch, internal-beta publish, AUTO-010 commit, and emergency stop."
+        description="First-boot bring-up, grant, ingest, X-search ingest, mint, dispatch, internal-beta publish, AUTO-010 commit, Neo4j project, and emergency stop."
     )
     parser.add_argument(
         "command",
@@ -743,6 +766,7 @@ def main(argv: list[str] | None = None) -> int:
             "dispatch-target",
             "dispatch-internal-beta",
             "auto-010-commit",
+            "project-neo4j",
         ),
     )
     parser.add_argument("--home", default=str(SHARED_HOME))
@@ -810,6 +834,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "auto-010-commit":
             _print_json(auto_010_commit(home, project_root=project_root))
+            return 0
+        if args.command == "project-neo4j":
+            _print_json(project_neo4j(home, project_root=project_root))
             return 0
         _print_json(start(home, project_root=project_root, resume=args.resume))
         return 0
