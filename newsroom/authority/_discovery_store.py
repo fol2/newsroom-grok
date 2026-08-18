@@ -201,8 +201,14 @@ def _validate_discovery_reads_in_transaction(connection: sqlite3.Connection) -> 
         "JOIN authentication_contexts x ON x.authentication_context_id=c.authentication_context_id "
         "JOIN authorization_requests r ON r.request_digest=c.authorization_request_digest "
         "JOIN authorization_decisions d ON d.authorization_decision_id=c.authorization_decision_id "
-        "WHERE e.event_type IN (?,?,?,?,?)",
-        tuple(spec[1] for spec in _DISCOVERY_RECORD_SPECS.values()),
+        "WHERE c.command_type IN (?,?,?,?,?) "
+        "OR e.event_id IN ("
+        "SELECT authority_event_id FROM discovery_signals "
+        "UNION ALL SELECT authority_event_id FROM discovery_gate_decisions "
+        "UNION ALL SELECT authority_event_id FROM news_leads "
+        "UNION ALL SELECT authority_event_id FROM discovery_watch_conditions "
+        "UNION ALL SELECT authority_event_id FROM lead_disposition_decisions)",
+        tuple(_DISCOVERY_RECORD_SPECS),
     ):
         def fields(output: str, source: str, captured: sqlite3.Row = row) -> dict[str, Any]:
             return dict(zip(output.split(), (captured[key] for key in source.split())))
@@ -1646,21 +1652,26 @@ class _DiscoveryAuthorityStore(_CheckAuthorityStore):
     @staticmethod
     def _validate_discovery_event_coverage(conn: sqlite3.Connection) -> None:
         specs = (
-            ("discovery.signal.admitted", "discovery_signals"),
-            ("discovery.gate.decided", "discovery_gate_decisions"),
-            ("discovery.lead.opened", "news_leads"),
-            ("discovery.watch_condition.recorded", "discovery_watch_conditions"),
-            ("discovery.lead.disposition.recorded", "lead_disposition_decisions"),
+            (DISCOVERY_SIGNAL_ADMIT_COMMAND, "discovery_signals"),
+            (DISCOVERY_GATE_DECIDE_COMMAND, "discovery_gate_decisions"),
+            (DISCOVERY_LEAD_OPEN_COMMAND, "news_leads"),
+            (DISCOVERY_WATCH_CONDITION_RECORD_COMMAND, "discovery_watch_conditions"),
+            (DISCOVERY_LEAD_DISPOSITION_RECORD_COMMAND, "lead_disposition_decisions"),
         )
-        for event_type, table in specs:
+        for command_type, table in specs:
+            expected_event = _DISCOVERY_RECORD_SPECS[command_type][1]
             missing = conn.execute(
-                f"SELECT e.event_id FROM ledger_events e LEFT JOIN {table} r "
-                "ON r.authority_event_id=e.event_id WHERE e.event_type=? "
+                f"SELECT e.event_id FROM ledger_events e "
+                "JOIN authority_commands c ON c.command_id=e.command_id "
+                f"LEFT JOIN {table} r ON r.authority_event_id=e.event_id "
+                "WHERE c.command_type=? AND e.event_type=? "
                 "AND r.authority_event_id IS NULL LIMIT 1",
-                (event_type,),
+                (command_type, expected_event),
             ).fetchone()
             if missing is not None:
-                raise AuthoritySchemaError(f"{event_type} has no exact domain record")
+                raise AuthoritySchemaError(
+                    f"{command_type} has no exact domain record"
+                )
 
 
 __all__ = ["_DiscoveryAuthorityStore"]

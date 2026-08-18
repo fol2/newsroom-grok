@@ -278,7 +278,7 @@ def skip_command_definition(
     )
 
 
-def first_feed_item_id(body: bytes) -> str:
+def all_feed_item_ids(body: bytes) -> tuple[str, ...]:
     from lxml import etree
 
     if type(body) is not bytes or not body:
@@ -298,13 +298,21 @@ def first_feed_item_id(body: bytes) -> str:
         root = etree.fromstring(body, parser=parser)
     except etree.XMLSyntaxError as exc:
         raise ValueError("RSS/Atom body is malformed") from exc
+    found: list[str] = []
     for element in root.iter():
         name = _local_name(element)
         if name == "item":
-            return _rss_item_id(element)
-        if name == "entry":
-            return _atom_entry_id(element)
-    raise ValueError("RSS/Atom feed has no item")
+            found.append(_rss_item_id(element))
+        elif name == "entry":
+            found.append(_atom_entry_id(element))
+    return tuple(found)
+
+
+def first_feed_item_id(body: bytes) -> str:
+    items = all_feed_item_ids(body)
+    if not items:
+        raise ValueError("RSS/Atom feed has no item")
+    return items[0]
 
 
 def load_official_rss_body(source_id: str | None = None) -> tuple[str, str, bytes]:
