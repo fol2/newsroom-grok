@@ -29,7 +29,9 @@ from newsroom.checks.read_policy import DiscoveryCheckReadPolicy
 from newsroom.discovery.policy import merge_discovery_signal_lead_registries
 from newsroom.discovery.types import DiscoveryReadPolicy
 from newsroom.extraction.policy import merge_extraction_authority_registries
-from newsroom.entities.policy import merge_entity_authority_registries
+from newsroom.relations.editorial_policy import (
+    merge_editorial_relation_authority_registries,
+)
 from newsroom.sources import SourceRegistryReadPolicy
 from newsroom.sources.policy import merge_source_registry_authority_registries
 from newsroom.discovery_ingest import (
@@ -218,7 +220,7 @@ def host_authority_registries() -> tuple[CommandRegistry, PayloadSchemaRegistry]
         command_registry=registry,
         payload_schemas=schemas,
     )
-    return merge_entity_authority_registries(
+    return merge_editorial_relation_authority_registries(
         command_registry=registry,
         payload_schemas=schemas,
     )
@@ -336,6 +338,7 @@ def open_host_store(path: Path) -> object:
                     "authority.object_lifecycle",
                     "authority.extraction",
                     "authority.entity",
+                    "authority.relation",
                 }
             ),
             allowed_trust_scopes=frozenset(
